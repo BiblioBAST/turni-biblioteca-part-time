@@ -1,10 +1,10 @@
 -- =====================================================================
 -- 06_web_push.sql — notifiche push per la coda (Supabase)
--- Esegui DOPO aver installato lo schema attuale (01 + aggiornamenti 04 e 05).
+-- Esegui DOPO lo schema attuale e dopo gli aggiornamenti 04 e 05.
 -- Non modifica né cancella utenti, prenotazioni o fila.
 -- =====================================================================
 
--- pg_net invia una chiamata asincrona alla Edge Function quando parte un turno.
+-- pg_net invia la richiesta iniziale all'Edge Function senza bloccare la fila.
 create extension if not exists pg_net;
 
 create table if not exists turni.push_subscriptions (
@@ -19,8 +19,7 @@ create index if not exists push_subscriptions_user_idx on turni.push_subscriptio
 alter table turni.push_subscriptions enable row level security;
 revoke all on turni.push_subscriptions from public, anon, authenticated;
 
--- Configurazione privata del trigger server -> Edge Function. Il segreto deve
--- essere lo stesso valore impostato come PUSH_TRIGGER_SECRET nella Function.
+-- Impostazioni private: endpoint e segreto condiviso per il trigger SQL.
 create table if not exists turni.push_config (
   id int primary key default 1 check (id = 1),
   function_url text not null,
@@ -29,7 +28,6 @@ create table if not exists turni.push_config (
 alter table turni.push_config enable row level security;
 revoke all on turni.push_config from public, anon, authenticated;
 
--- Registrazione/aggiornamento della sottoscrizione del browser autenticato.
 create or replace function public.app_push_subscribe(p_token text, p_subscription jsonb)
 returns jsonb language plpgsql security definer set search_path = turni, extensions, pg_temp as $$
 declare
@@ -67,17 +65,49 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
+-- RPC privata per l'Edge Function: convalida il segreto lato DB e restituisce
+-- solo l'utente ancora in attesa e le sue sottoscrizioni push.
+create or replace function public.app_push_prepare(
+  p_trigger_secret text, p_queue_id bigint, p_expected_started_at timestamptz
+)
+returns jsonb language plpgsql security definer set search_path = turni, extensions, pg_temp as $$
+declare
+  cfg turni.push_config;
+  q turni.queue;
+  next_user uuid;
+  subs jsonb;
+  v_turn_seconds int;
+begin
+  select * into cfg from turni.push_config where id = 1;
+  if not found or p_trigger_secret is null or cfg.trigger_secret <> p_trigger_secret then
+    perform turni.fail('Non autorizzato', 401);
+  end if;
+  select * into q from turni.queue
+   where id = p_queue_id and status = 'active'
+     and started_at = p_expected_started_at;
+  if not found then return jsonb_build_object('send', false, 'reason', 'turn_changed'); end if;
+  select turn_seconds into v_turn_seconds from turni.config where id = 1;
+  select user_id into next_user from turni.queue
+   where cycle_week = q.cycle_week and status = 'waiting' order by id limit 1;
+  if next_user is null then return jsonb_build_object('send', false, 'reason', 'no_waiting_user'); end if;
+  select coalesce(jsonb_agg(jsonb_build_object('endpoint', endpoint, 'p256dh', p256dh, 'auth', auth)), '[]'::jsonb)
+    into subs from turni.push_subscriptions where user_id = next_user;
+  return jsonb_build_object('send', true, 'turn_seconds', v_turn_seconds,
+    'started_at', q.started_at, 'subscriptions', subs);
+end $$;
+
 revoke all on function public.app_push_subscribe(text, jsonb) from public;
 revoke all on function public.app_push_unsubscribe(text, text) from public;
+revoke all on function public.app_push_prepare(text, bigint, timestamptz) from public, anon, authenticated;
 grant execute on function public.app_push_subscribe(text, jsonb) to anon, authenticated;
 grant execute on function public.app_push_unsubscribe(text, text) to anon, authenticated;
+grant execute on function public.app_push_prepare(text, bigint, timestamptz) to service_role;
 
--- Quando il turno passa ad active, una richiesta asincrona avvia il conto
--- alla rovescia sul server. L'Edge Function ricontrolla la fila prima di inviare.
 create or replace function turni.schedule_queue_push()
 returns trigger language plpgsql security definer set search_path = turni, net, pg_temp as $$
 declare
   cfg turni.push_config;
+  v_turn_seconds int;
   v_request_id bigint;
 begin
   if new.status <> 'active' or new.started_at is null then return new; end if;
@@ -85,12 +115,13 @@ begin
     return new;
   end if;
   select * into cfg from turni.push_config where id = 1;
-  if not found or cfg.function_url is null or cfg.trigger_secret is null then return new; end if;
+  if not found then return new; end if;
+  select turn_seconds into v_turn_seconds from turni.config where id = 1;
   select net.http_post(
     url := cfg.function_url,
     headers := jsonb_build_object('Content-Type', 'application/json', 'x-push-trigger-secret', cfg.trigger_secret),
-    body := jsonb_build_object('queue_id', new.id, 'cycle_week', new.cycle_week,
-      'user_id', new.user_id, 'started_at', new.started_at),
+    body := jsonb_build_object('queue_id', new.id, 'started_at', new.started_at,
+      'turn_seconds', v_turn_seconds),
     timeout_milliseconds := 5000
   ) into v_request_id;
   return new;
@@ -101,10 +132,5 @@ create trigger queue_schedule_push
 after insert or update of status, started_at on turni.queue
 for each row execute function turni.schedule_queue_push();
 
--- Dopo aver distribuito la Function, inserisci qui URL e segreto condiviso.
--- Sostituisci SOLO il valore del segreto con lo stesso PUSH_TRIGGER_SECRET
--- impostato in Supabase Edge Functions; non committare il valore in GitHub.
--- Esegui questo UPSERT separatamente nel SQL Editor:
--- insert into turni.push_config(id, function_url, trigger_secret)
--- values (1, 'https://qinkysjtxborkwvaiqoo.supabase.co/functions/v1/queue-push', 'INSERISCI_QUI_IL_TUO_SEGRETO')
--- on conflict (id) do update set function_url = excluded.function_url, trigger_secret = excluded.trigger_secret;
+-- Dopo aver distribuito la Function, configura URL e segreto con l'UPSERT
+-- descritto in PUSH_SETUP.md. Non inserire mai il segreto in GitHub.

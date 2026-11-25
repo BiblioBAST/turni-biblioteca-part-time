@@ -1,114 +1,88 @@
 # Attivare le notifiche push della fila (Supabase + GitHub Pages)
 
-Questa procedura aggiunge una push quando mancano circa 10 secondi al termine del turno attivo. Funziona anche se la pagina è chiusa o il telefono è bloccato, purché il browser/dispositivo consenta Web Push e l’utente abbia attivato le notifiche.
+La push avvisa la persona successiva in fila circa 10 secondi prima della fine del turno in corso. L’invio è avviato dal database quando un turno passa ad `active`; l’Edge Function attende fino all’istante previsto, ricontrolla che il turno non sia cambiato e invia la notifica.
 
-## Prima di cominciare
+## Importante prima di applicare
 
-- Fai prima una copia/backup del repository e del progetto Supabase.
-- Il database deve già avere il sistema turni aggiornato, inclusi `04_blocca_giorni_passati.sql` e `05_sovrapposizione_turni.sql`.
-- La logica di attesa dell’Edge Function è pensata per la durata standard di 60 secondi; per avere un margine affidabile imposta la durata del turno a **130 secondi o meno**. Il pannello permette valori maggiori, ma questa implementazione restituisce errore per turni più lunghi.
-- Le push Web richiedono HTTPS. GitHub Pages lo fornisce. Su iPhone/iPad l’utente deve aggiungere il sito alla schermata Home e concedere il permesso quando richiesto da iOS.
+- Fai un backup del progetto Supabase e del repository.
+- Il database deve già avere lo schema applicativo e gli aggiornamenti `04_blocca_giorni_passati.sql` e `05_sovrapposizione_turni.sql`.
+- L’Edge Function resta attiva mentre attende. Il turno standard da 60 secondi rientra nel limite supportato; durate lunghe possono non inviare la notifica. Per questo caso, mantieni **Durata del turno ≤ 130 secondi**.
+- Le notifiche sono best effort: non è possibile garantire la consegna precisa al secondo. iOS richiede che il sito sia aggiunto alla schermata Home e che l’utente autorizzi le notifiche.
 
-## 1. Generare le chiavi VAPID
+## 1. Generare chiavi VAPID e un segreto
 
-Sul computer installa Node.js, poi esegui:
+Installa Node.js sul computer e lancia:
 
 ```bash
 npx web-push generate-vapid-keys
 ```
 
-Conserva entrambe le chiavi in un password manager:
-
-- `Public Key`: va nella pagina pubblica e nelle variabili della Function.
-- `Private Key`: **solo** nelle Secrets dell’Edge Function; non inserirla mai nel repository o in SQL.
-
-Genera inoltre un segreto condiviso casuale lungo almeno 32 byte (esempio su macOS/Linux):
+Conserva la chiave pubblica e privata. La privata non deve mai essere pubblicata o inserita in SQL/GitHub. Genera anche un segreto trigger distinto:
 
 ```bash
 openssl rand -hex 32
 ```
 
-Non riutilizzare password o chiavi di Supabase per questo segreto.
+## 2. Caricare i file nel repository
 
-## 2. Eseguire la migrazione SQL
+Il branch di lavoro è `copilot/queue-web-push`. Contiene `push-client.js`, `sw.js`, `supabase/functions/queue-push/index.ts`, `supabase/config.toml` e questa guida.
+
+1. Apri una Pull Request dal branch `copilot/queue-web-push` a `main` e uniscila dopo aver verificato i file.
+2. Il nuovo `sw.js` carica automaticamente `push-client.js` nelle navigazioni successive. Non devi editare manualmente il grande `index.html`.
+3. Prima di unire, apri `push-client.js` e sostituisci `PASTE_VAPID_PUBLIC_KEY_HERE` con la tua chiave pubblica VAPID.
+4. Attendi che GitHub Pages aggiorni il sito. Il service worker si aggiorna quando gli utenti riaprono il sito; può essere necessario chiudere e riaprire la pagina una volta dopo l’aggiornamento.
+
+Non unire o distribuire il codice finché il placeholder VAPID resta nel file: il pulsante avviserà che la chiave non è configurata.
+
+## 3. Eseguire la migrazione SQL in Supabase
 
 1. Apri Supabase → **SQL Editor** → **New query**.
-2. Copia ed esegui tutto il file `supabase/migrations/202611250001_web_push.sql` presente nel branch.
-3. Se `pg_net` non è disponibile o non può essere installata, fermati e abilitala da **Database → Extensions** prima di rieseguire la migrazione.
-4. La migrazione crea solo tabelle private, due RPC protette e un trigger; non elimina dati esistenti.
+2. Copia tutto `supabase/migrations/202611250001_web_push.sql` dal branch e premi **Run**.
+3. Se compare un errore per `pg_net`, abilita l’estensione `pg_net` in **Database → Extensions** e riesegui la migrazione.
+4. La migrazione aggiunge tabelle private, RPC e un trigger; non modifica le prenotazioni o gli account.
 
-## 3. Distribuire l’Edge Function
+## 4. Distribuire l’Edge Function
 
-Installa Supabase CLI (istruzioni ufficiali: https://supabase.com/docs/guides/cli), accedi e collega il progetto:
+Installa Supabase CLI, apri un terminale nella copia locale del repository e lancia:
 
 ```bash
 supabase login
 supabase link --project-ref qinkysjtxborkwvaiqoo
-```
-
-Dalla cartella locale del repository, configura le secrets. Sostituisci i valori con le chiavi generate. `VAPID_SUBJECT` può essere un indirizzo email raggiungibile:
-
-```bash
-supabase secrets set PUSH_TRIGGER_SECRET="IL_SEGRETO_CASUALE" VAPID_PUBLIC_KEY="LA_CHIAVE_PUBBLICA" VAPID_PRIVATE_KEY="LA_CHIAVE_PRIVATA" VAPID_SUBJECT="mailto:tuo-indirizzo@example.org"
-```
-
-Distribuisci la funzione:
-
-```bash
+supabase secrets set PUSH_TRIGGER_SECRET="IL_TUO_SEGRETO_CASUALE" VAPID_PUBLIC_KEY="LA_TUA_CHIAVE_PUBBLICA" VAPID_PRIVATE_KEY="LA_TUA_CHIAVE_PRIVATA" VAPID_SUBJECT="mailto:tuo-indirizzo@example.org"
 supabase functions deploy queue-push --no-verify-jwt
 ```
 
-`--no-verify-jwt` è necessario perché la invoca il trigger PostgreSQL; la funzione verifica invece l’header segreto `x-push-trigger-secret`. Non pubblicare né condividere tale segreto.
+`PUSH_TRIGGER_SECRET` deve essere esattamente il segreto casuale creato al punto 1. La chiave privata rimane nelle secrets Supabase. Il comando usa `--no-verify-jwt` perché PostgreSQL non invia un JWT utente; la Function verifica invece il segreto dedicato.
 
-## 4. Collegare il trigger alla Function
+## 5. Collegare il database alla Function
 
-Nel SQL Editor esegui questo comando sostituendo `IL_SEGRETO_CASUALE` con lo stesso valore impostato in `PUSH_TRIGGER_SECRET` (senza aggiungere il valore al repository):
+In Supabase → **SQL Editor** esegui il comando seguente, sostituendo il valore placeholder con lo stesso segreto `PUSH_TRIGGER_SECRET`:
 
 ```sql
 insert into turni.push_config(id, function_url, trigger_secret)
-values (1, 'https://qinkysjtxborkwvaiqoo.supabase.co/functions/v1/queue-push', 'IL_SEGRETO_CASUALE')
+values (1, 'https://qinkysjtxborkwvaiqoo.supabase.co/functions/v1/queue-push', 'IL_TUO_SEGRETO_CASUALE')
 on conflict (id) do update
 set function_url = excluded.function_url, trigger_secret = excluded.trigger_secret;
 ```
 
-Il segreto va inserito solo nel pannello Supabase e nella configurazione locale/CLI, non in un commit.
+Non salvare il segreto nel repository e non condividerlo. La RPC che legge la coda è concessa soltanto al ruolo `service_role`; le tabelle private non sono accessibili dal browser.
 
-## 5. Mettere i file sul sito GitHub Pages
+## 6. Attivare le notifiche per gli studenti
 
-Carica/committa sul branch o sul repository pubblicato:
+Dopo il deploy, ogni studente deve accedere e premere **Attiva avviso in coda** nella barra in alto, quindi consentire le notifiche. La sottoscrizione è specifica di browser e dispositivo: va ripetuta su ogni telefono/computer utilizzato. Per revocarla si preme **Disattiva avviso in coda**.
 
-- `sw.js` (sovrascrive il service worker esistente);
-- `push-client.js`;
-- `index.html` aggiornato con la riga indicata sotto.
+Su iPhone/iPad: aggiungere il sito alla schermata Home, aprirlo dall’icona e accettare la richiesta notifiche. Le impostazioni di sistema, risparmio energetico e rete possono ritardare o bloccare le push.
 
-Apri `push-client.js` e sostituisci `PASTE_VAPID_PUBLIC_KEY_HERE` con la sola chiave **pubblica** VAPID. È sicuro pubblicare questa chiave.
+## 7. Test controllato
 
-Nel file `index.html`, aggiungi immediatamente prima di `</body>`:
+1. Attiva le push su un account studente e mettilo in attesa.
+2. Avvia un turno con un altro studente.
+3. Verifica che la persona in attesa riceva l’avviso quando mancano circa 10 secondi.
+4. Termina anticipatamente il turno attivo: in quel caso non deve arrivare un avviso ormai non pertinente.
+5. Controlla log della Function da Supabase → **Edge Functions → queue-push → Logs**.
 
-```html
-<script src="./push-client.js"></script>
-```
+## Limiti tecnici
 
-Il branch contiene `push-client.js` e il nuovo `sw.js`; per non sovrascrivere accidentalmente la pagina esistente, la riga di inclusione va aggiunta al `index.html` corrente nel repository. Dopo il commit attendi il deploy GitHub Pages e ricarica la pagina.
-
-## 6. Attivazione da parte di ogni studente
-
-1. Lo studente accede al sito e, dopo aver cambiato la password provvisoria, preme **Attiva avviso in coda** nella barra superiore.
-2. Accetta il permesso notifiche del browser.
-3. Il browser memorizza la sottoscrizione per quel dispositivo e la associa all’account. Ogni dispositivo/browser va attivato separatamente.
-4. Per disattivarla, lo studente preme **Disattiva avviso in coda**.
-
-Il pulsante si vede solo agli studenti autenticati; un account admin non può registrare una sottoscrizione push per la coda.
-
-## 7. Verifica
-
-Per una prova controllata, imposta temporaneamente una durata turno breve ma non inferiore a 20 secondi, attiva le notifiche su un account studente in attesa, avvia un turno con un altro account e verifica la push circa 10 secondi prima della scadenza. La push dice di riattivare il cellulare o riaprire la pagina.
-
-La funzione ricontrolla lo stato al momento dell’invio: se il turno attivo è stato terminato/saltato o la persona non è più la prossima, non invia l’avviso. Se il servizio push segnala una sottoscrizione scaduta, questa viene rimossa automaticamente.
-
-## Limiti da conoscere
-
-- L’invio è programmato dal server, ma la consegna effettiva dipende dal servizio push del browser e dalla rete; non si può garantire una puntualità al secondo.
-- Turni configurati oltre 130 secondi non ricevono questo avviso differito; riduci la durata nel pannello **Impostazioni**.
-- Se l’utente ha negato le notifiche, disattivato le notifiche del sito o attivato modalità di risparmio, il dispositivo può ritardare/non mostrare la push.
-- Per mettere offline l’app o eliminare un account, le sottoscrizioni vengono cancellate tramite cascata quando l’account è eliminato; gli utenti disattivati possono riattivarsi dopo aver riabilitato il proprio account.
+- La consegna può subire ritardi del servizio push o del dispositivo. L’avviso è best effort.
+- Il conto alla rovescia è tenuto dall’Edge Function; turni lunghi oltre la finestra supportata (circa 130 secondi) non sono supportati da questa implementazione. Mantieni la durata entro quel valore.
+- Una sottoscrizione revocata/scaduta dal browser può richiedere che lo studente disattivi e riattivi gli avvisi.

@@ -1,5 +1,5 @@
-// Edge Function: invia la push 10 secondi prima del termine del turno attivo.
-// La richiesta iniziale viene generata dal trigger SQL e resta in attesa sul server.
+// Edge Function: avverte la prossima persona in fila circa 10 secondi prima
+// del termine del turno attivo. Il server ricontrolla la coda al momento invio.
 import webpush from 'npm:web-push@3.6.7';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
@@ -9,9 +9,6 @@ const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY')!;
 const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY')!;
 const VAPID_SUBJECT = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@example.com';
 const WARNING_SECONDS = 10;
-// Supabase limita la durata di una singola invocazione. Il valore predefinito
-// (60s) richiede circa 50s di attesa. Il massimo qui supportato lascia margine
-// entro il limite runtime comune delle Edge Functions.
 const MAX_WAIT_MS = 120_000;
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
@@ -22,21 +19,38 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 });
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function selectRows(path: string) {
-  const response = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
-    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+async function prepare(queueId: string, startedAt: string) {
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/app_push_prepare`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({
+      p_trigger_secret: TRIGGER_SECRET,
+      p_queue_id: queueId,
+      p_expected_started_at: startedAt,
+    }),
   });
-  if (!response.ok) throw new Error(`Supabase REST ${response.status}: ${await response.text()}`);
-  return await response.json();
+  const result = await response.json().catch(() => null);
+  if (!response.ok) throw new Error(`Push preparation failed (${response.status})`);
+  return result;
 }
 
 async function deleteSubscription(endpoint: string) {
-  const url = new URL(`${SUPABASE_URL}/rest/v1/push_subscriptions`);
-  url.searchParams.set('endpoint', `eq.${endpoint}`);
-  await fetch(url, {
-    method: 'DELETE',
-    headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` },
+  // La rimozione avviene solo tramite RPC dedicata con il service role;
+  // l'endpoint proviene dal risultato limitato della RPC protetta.
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/app_push_delete_expired`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+    },
+    body: JSON.stringify({ p_trigger_secret: TRIGGER_SECRET, p_endpoint: endpoint }),
   });
+  if (!response.ok) console.error('Could not remove expired push subscription', response.status);
 }
 
 Deno.serve(async (request) => {
@@ -44,64 +58,43 @@ Deno.serve(async (request) => {
   if (!TRIGGER_SECRET || request.headers.get('x-push-trigger-secret') !== TRIGGER_SECRET) {
     return json({ error: 'Unauthorized' }, 401);
   }
-
   try {
     const job = await request.json();
     const queueId = String(job.queue_id || '');
-    const cycleWeek = String(job.cycle_week || '');
-    const activeUserId = String(job.user_id || '');
     const startedAt = String(job.started_at || '');
-    if (!/^\d+$/.test(queueId) || !/^\d{4}-\d{2}-\d{2}$/.test(cycleWeek) ||
-        !/^[0-9a-f-]{36}$/i.test(activeUserId) || !Number.isFinite(Date.parse(startedAt))) {
+    const turnSeconds = Number(job.turn_seconds);
+    if (!/^\d+$/.test(queueId) || !Number.isFinite(Date.parse(startedAt)) ||
+        !Number.isInteger(turnSeconds) || turnSeconds < 10 || turnSeconds > 600) {
       return json({ error: 'Invalid job payload' }, 400);
     }
-
-    const cfgRows = await selectRows('config?select=turn_seconds&id=eq.1&limit=1');
-    const turnSeconds = Number(cfgRows?.[0]?.turn_seconds);
-    if (!Number.isInteger(turnSeconds) || turnSeconds < 10 || turnSeconds > 600) {
-      return json({ error: 'Invalid turn duration' }, 500);
-    }
-    const deadline = Date.parse(startedAt) + turnSeconds * 1000;
-    const sendAt = deadline - WARNING_SECONDS * 1000;
-    const waitMs = sendAt - Date.now();
+    const waitMs = Date.parse(startedAt) + (turnSeconds - WARNING_SECONDS) * 1000 - Date.now();
     if (waitMs > MAX_WAIT_MS) {
-      // Fail closed rather than send a late/incorrect warning. Keep queue turns
-      // at 130 seconds or less for this delayed-notification implementation.
-      console.error(`Queue push wait (${waitMs}ms) exceeds Edge Function limit`);
-      return json({ error: 'Turn duration too long for delayed push; use 130 seconds or less' }, 422);
+      // Supabase Edge Functions cannot reliably sleep through long queue turns.
+      // Default 60-second turns are supported; long turns fail closed.
+      console.error(`Queue push wait ${waitMs}ms exceeds supported delay`);
+      return json({ error: 'Turn is longer than the supported delayed-push window' }, 422);
     }
     if (waitMs > 0) await sleep(waitMs);
 
-    // Re-check at send time: an early finish, skip, removal, or replaced turn
-    // must not alert a user who is no longer next.
-    const activeRows = await selectRows(
-      `queue?select=id,user_id,status,started_at,cycle_week&id=eq.${encodeURIComponent(queueId)}&limit=1`,
-    );
-    const active = activeRows?.[0];
-    if (!active || active.status !== 'active' || active.user_id !== activeUserId ||
-        active.cycle_week !== cycleWeek || Date.parse(active.started_at) !== Date.parse(startedAt)) {
+    const prepared = await prepare(queueId, startedAt);
+    if (!prepared?.send) return json({ ok: true, skipped: prepared?.reason || 'not sendable' });
+    if (Date.parse(prepared.started_at) !== Date.parse(startedAt)) {
       return json({ ok: true, skipped: 'active turn changed' });
     }
-    const waitingRows = await selectRows(
-      `queue?select=user_id,status&id=gt.0&cycle_week=eq.${encodeURIComponent(cycleWeek)}&status=eq.waiting&order=id.asc&limit=1`,
-    );
-    const nextUserId = waitingRows?.[0]?.user_id;
-    if (!nextUserId) return json({ ok: true, skipped: 'no one waiting' });
-
-    const subscriptions = await selectRows(
-      `push_subscriptions?select=endpoint,p256dh,auth&user_id=eq.${encodeURIComponent(nextUserId)}`,
-    );
-    const message = JSON.stringify({
+    const payload = JSON.stringify({
       title: 'Tra 10 secondi tocca a te',
       body: 'Riattiva il cellulare o riapri la pagina: il tuo turno sta per iniziare.',
       url: '/',
     });
     let sent = 0;
     let removed = 0;
-    for (const row of subscriptions || []) {
-      const subscription = { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } };
+    for (const row of prepared.subscriptions || []) {
       try {
-        await webpush.sendNotification(subscription, message, { TTL: 60, urgency: 'high' });
+        await webpush.sendNotification(
+          { endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } },
+          payload,
+          { TTL: 60, urgency: 'high' },
+        );
         sent++;
       } catch (error) {
         const statusCode = Number((error as { statusCode?: number }).statusCode);

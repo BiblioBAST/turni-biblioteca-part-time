@@ -1,0 +1,3 @@
+-- Aggiungi questo helper alla migrazione principale, eseguendolo prima che la Function sia attiva:
+-- (incluso nella migrazione 06_web_push.sql)
+-- NOTE: il service role deve essere l'unico a poterlo eseguire.
