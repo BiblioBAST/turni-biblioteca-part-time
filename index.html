@@ -615,10 +615,12 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     if (kind === 'book') {
       if (S.slots.some(key)) return;
       const date = S.weekDays[day];
+      if (date < S.today) { toast('Non puoi modificare i turni dei giorni passati', true); return; }
       const near = date === S.today || date === addDays(S.today, 1);   // settimana precedente e ore extra: solo oggi e domani
       if (!S.canEdit && !near) { toast('Settimana in corso: puoi prenotare solo i turni liberi di oggi e di domani', true); return; }
       if (S.myCycleHours >= S.config.maxHours && !near) { toast('Hai già raggiunto il massimo di ' + S.config.maxHours + ' ore sulle due settimane: puoi superarlo solo per i turni liberi di oggi e di domani', true); return; }
     }
+    if (kind === 'unbook' && S.weekDays[day] < S.today) { toast('Non puoi modificare i turni dei giorni passati', true); return; }
     const week = S.week;
     const next = JSON.parse(JSON.stringify(S));
     next.now = serverNow();
@@ -743,6 +745,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     const cfg = S.config;
     const canEdit = S.canEdit;
     const bySlot = new Map(S.slots.map((s) => [`${s.day}-${s.hour}`, s]));
+    const pastDay = (d) => S.weekDays[d] < S.today;   // giorni passati: bloccati per gli studenti
     const nearDay = (d) => S.weekDays[d] === S.today || S.weekDays[d] === addDays(S.today, 1);   // ore extra: solo oggi e domani
 
     const thead = h('tr', null, h('th', { class: 'hr', scope: 'col' }, 'Ora'),
@@ -758,10 +761,10 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
           if (!s) {
             cls += ' free';
             if (isAdmin) { onclick = () => assignDialog(d, hr, null); cls += ' act'; }
-            else if (canEdit || (S.extraOnly && nearDay(d))) { onclick = () => quickSlot('book', d, hr); cls += ' act'; }
+            else if (!pastDay(d) && (canEdit || (S.extraOnly && nearDay(d)))) { onclick = () => quickSlot('book', d, hr); cls += ' act'; }
           } else if (s.userId === me.id) {
             cls += ' mine'; text = 'Tu'; status = 'prenotato da te';
-            if (canEdit || (S.extraOnly && nearDay(d))) { onclick = () => quickSlot('unbook', d, hr); cls += ' act'; }
+            if (!pastDay(d) && (canEdit || (S.extraOnly && nearDay(d)))) { onclick = () => quickSlot('unbook', d, hr); cls += ' act'; }
           } else {
             cls += ' taken'; text = s.name; status = `occupato da ${s.name}`;
             if (isAdmin) { onclick = () => assignDialog(d, hr, s); cls += ' act'; }
