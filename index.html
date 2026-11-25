@@ -546,6 +546,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
   function startApp() {
     stopLive();
     S = null; sigPrev = ''; tab = 'turni'; viewWeek = null;
+    Alerts.init();
     buildShell();
     connect();
     refresh();
@@ -559,6 +560,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     const sig = JSON.stringify(next, (k, v) => (k === 'now' || k === 'remainingMs' ? 0 : v));
     const first = !S;
     S = next;
+    Alerts.onState();
     if (first) buildShell();
     if (sig === sigPrev) return;
     sigPrev = sig;
@@ -675,6 +677,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
         h('p', null, 'Tocca un turno libero per prenotarlo. Tocca un tuo turno per liberarlo. Usa i pulsanti sopra la griglia per spostarti tra la 1ª e la 2ª settimana.'),
         hrs >= cfg.maxHours ? h('p', null, `Hai raggiunto il massimo di ${cfg.maxHours} ore sulle due settimane: puoi prenotare ancora solo i turni liberi di oggi e di domani, che compariranno in rosso.`) : null,
         S.today <= addDays(S.cycle.week1, -3) ? h('p', { class: 'muted small' }, `La settimana precedente al ciclo termina venerdì: puoi prenotare anche lì i turni liberi di oggi e di domani (oltre le ${cfg.maxHours} ore complessive sono extra), usando «‹ Precedente» sopra la griglia.`) : null,
+        Alerts.control(),
         h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn btn-dark', onclick: () => act(() => api('POST', '/api/queue/finish'), 'Turno terminato') }, 'Ho finito')));
     }
     if (q.status === 'waiting') {
@@ -686,6 +689,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
           ? h('p', null, 'La fila parte alle ', h('strong', null, S.config.openTime), ' (tra ', cd(S.cycle.openingTs, 'long'), '). Riapri questa pagina poco prima dell\'apertura.')
           : h('p', null, ahead === 0 ? 'Sei il prossimo.' : `Davanti a te ${ahead === 1 ? 'c\'è 1 persona' : `ci sono ${ahead} persone`}. Attesa stimata: circa ${mins} ${plural(mins, 'minuto', 'minuti')}.`,
             ` Puoi anche chiudere la pagina o bloccare il telefono, ma ricordati di riaprirla qualche minuto prima del tuo turno: quando tocca a te hai ${cfg.turnSeconds} secondi e, se non ci sei, il turno passa al successivo.`),
+        Alerts.control(),
         h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => act(() => api('POST', '/api/queue/leave'), 'Sei uscito dalla fila') }, 'Esci dalla fila')));
     }
     if (q.status === 'done') {
@@ -956,6 +960,106 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
           : h('p', { class: 'muted' }, 'Ancora nessuna attività.')));
     } catch (ex) { toast(ex.message, true); }
   }
+
+
+  // ───────────── Avvisi sullo smartphone ─────────────
+  // 1) Tiene lo schermo acceso (Wake Lock) quando tocca a te o stai per essere chiamato.
+  // 2) Se lo schermo si spegne o la pagina va in background proprio in quel momento,
+  //    mostra una notifica (se l'utente l'ha attivata) con vibrazione.
+  // 3) Quando inizia il tuo turno con la pagina aperta: suono + vibrazione.
+  const Alerts = (() => {
+    let wake = null, audioCtx = null, lastStatus = null, lastPos = null;
+    const isStudent = () => S && me && me.role === 'student';
+    const st = () => S.queue.me.status;
+    // turno in corso, oppure tra i primi della fila a fila aperta
+    const hot = () => isStudent() && ((st() === 'active' && S.cyclePhase === 'open') || (st() === 'waiting' && S.cyclePhase === 'open' && S.queue.me.pos <= 2));
+
+    async function syncWake() {
+      try {
+        if (hot() && !document.hidden && !wake && 'wakeLock' in navigator) {
+          wake = await navigator.wakeLock.request('screen');
+          wake.addEventListener('release', () => { wake = null; });
+        } else if (!hot() && wake) { await wake.release(); wake = null; }
+      } catch { wake = null; /* risparmio energetico attivo o non supportato */ }
+    }
+    function beep() {
+      try {
+        if (!audioCtx) return;
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        [0, 0.25, 0.5].forEach((t) => {
+          const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+          o.frequency.value = 880; o.connect(g); g.connect(audioCtx.destination);
+          g.gain.setValueAtTime(0.25, audioCtx.currentTime + t);
+          g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + t + 0.2);
+          o.start(audioCtx.currentTime + t); o.stop(audioCtx.currentTime + t + 0.22);
+        });
+      } catch { /* ignora */ }
+    }
+    const buzz = (p) => { try { navigator.vibrate && navigator.vibrate(p); } catch { /* ignora */ } };
+    async function notify(title, body) {
+      try {
+        if (!('Notification' in window) || Notification.permission !== 'granted' || !('serviceWorker' in navigator)) return;
+        const reg = await navigator.serviceWorker.ready;
+        await reg.showNotification(title, { body, tag: 'turni', renotify: true, requireInteraction: true, vibrate: [300, 150, 300, 150, 300] });
+      } catch { /* ignora */ }
+    }
+    async function clearNotifications() {
+      try {
+        if (!('serviceWorker' in navigator)) return;
+        const reg = await navigator.serviceWorker.getRegistration();
+        if (reg) (await reg.getNotifications({ tag: 'turni' })).forEach((n) => n.close());
+      } catch { /* ignora */ }
+    }
+    function init() {
+      if (!isStudent()) return;
+      try { if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js'); } catch { /* ignora */ }
+      // il suono richiede un primo tocco dell'utente
+      document.addEventListener('pointerdown', () => {
+        if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        else if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      }, { once: false, passive: true });
+    }
+    function onState() {
+      if (!isStudent()) return;
+      const s = st(), pos = S.queue.me.pos;
+      if (s === 'active' && lastStatus !== 'active' && S.cyclePhase === 'open') {
+        if (!document.hidden) { beep(); buzz([400, 150, 400]); }
+        else notify('Tocca a te!', 'Riapri la pagina: il tuo turno è iniziato.');
+      } else if (s === 'waiting' && pos === 0 && lastPos !== 0 && lastStatus === 'waiting' && !document.hidden) {
+        buzz(200);
+      }
+      lastStatus = s; lastPos = pos;
+      syncWake();
+    }
+    document.addEventListener('visibilitychange', () => {
+      if (!isStudent()) return;
+      if (document.hidden) {
+        // schermo spento, telefono bloccato o cambio di app mentre il turno è vicino o in corso
+        if (st() === 'active' && S.cyclePhase === 'open') notify('Il tuo turno è in corso', 'Lo schermo si è spento o hai lasciato la pagina: riaprila subito, il tempo sta scorrendo.');
+        else if (hot()) notify('Stai per essere chiamato', 'Riapri la pagina e tieni lo schermo acceso: tra poco tocca a te.');
+      } else {
+        clearNotifications();
+        syncWake();
+      }
+    });
+    // Riquadro con il pulsante per attivare le notifiche (serve un tocco dell'utente)
+    function control() {
+      if (!isStudent()) return null;
+      if (!('Notification' in window) || !('serviceWorker' in navigator)) {
+        return h('p', { class: 'muted small' }, 'Avvisi a schermo spento: su iPhone funzionano solo se aggiungi la pagina alla schermata Home (Condividi → «Aggiungi alla schermata Home») e la apri da lì.');
+      }
+      if (Notification.permission === 'granted') return h('p', { class: 'muted small' }, '🔔 Avvisi attivi: lo schermo resta acceso durante il tuo turno e, se si spegne, ricevi una notifica.');
+      if (Notification.permission === 'denied') return h('p', { class: 'muted small' }, 'Le notifiche sono bloccate nelle impostazioni del browser: riattivale per questo sito se vuoi ricevere gli avvisi.');
+      return h('div', { class: 'row' }, h('button', { class: 'btn btn-sm', type: 'button', onclick: async (ev) => {
+        try {
+          if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const r = await Notification.requestPermission();
+          if (r === 'granted') { toast('Avvisi attivati'); if (S) renderTurni(); }
+        } catch { /* ignora */ }
+      } }, '🔔 Attiva gli avvisi sul telefono'));
+    }
+    return { init, onState, control };
+  })();
 
   // ───────────── Avvio ─────────────
   (async function boot() {
