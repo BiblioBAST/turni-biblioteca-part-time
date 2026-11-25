@@ -1,0 +1,948 @@
+<!doctype html>
+<html lang="it">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<title>Turni in biblioteca</title>
+<style>
+:root {
+  --paper: #f1f3f7;
+  --card: #ffffff;
+  --ink: #101b33;
+  --ink2: #4b5775;
+  --ink3: #8d96ad;
+  --line: #d3d9e4;
+  --line2: #e6eaf1;
+  --stamp: #2342c4;
+  --flag: #f4b52e;
+  --flag-soft: #ffe7a8;
+  --ok: #1b7a58;
+  --bad: #b3261e;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.5 var(--sans); }
+h1, h2, h3 { font-family: var(--serif); font-weight: 600; line-height: 1.2; margin: 0; }
+h2 { font-size: 22px; }
+h3 { font-size: 17px; }
+p { margin: 0 0 10px; max-width: 68ch; }
+a { color: var(--stamp); }
+:focus-visible { outline: 3px solid var(--stamp); outline-offset: 2px; }
+
+/* ── Barra superiore ── */
+.bar { background: var(--ink); color: #fff; }
+.bar-in { max-width: 1120px; margin: 0 auto; padding: 12px 24px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { font-family: var(--serif); font-size: 21px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.brand::before { content: ""; width: 10px; height: 26px; background: var(--flag); border-radius: 1px 1px 5px 5px; }
+.who { display: flex; align-items: center; gap: 6px; font-size: 14px; flex-wrap: wrap; }
+.who .name { margin-right: 8px; color: #cfd6e8; }
+.link { background: none; border: 0; color: #fff; font: inherit; font-size: 14px; padding: 6px 8px; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: rgba(255, 255, 255, .45); }
+.link:hover { text-decoration-color: #fff; }
+.link:focus-visible { outline-color: var(--flag); }
+
+.tabs { background: var(--card); border-bottom: 1px solid var(--line); }
+.tabs-in { max-width: 1120px; margin: 0 auto; padding: 0 24px; display: flex; gap: 4px; overflow-x: auto; }
+.tab { background: none; border: 0; border-bottom: 3px solid transparent; font: inherit; font-weight: 500; color: var(--ink2); padding: 12px 14px 9px; cursor: pointer; white-space: nowrap; }
+.tab[aria-current="page"] { color: var(--ink); border-bottom-color: var(--stamp); font-weight: 650; }
+
+.wrap { max-width: 1120px; margin: 0 auto; padding: 24px; }
+
+/* ── Pulsanti ── */
+.btn { display: inline-block; text-decoration: none; font: inherit; font-weight: 600; border: 1.5px solid var(--ink); background: var(--card); color: var(--ink); padding: 9px 16px; border-radius: 4px; cursor: pointer; }
+.btn:hover { background: var(--line2); }
+.btn-dark { background: var(--ink); color: #fff; }
+.btn-dark:hover { background: #22304f; }
+.btn-main { background: var(--stamp); border-color: var(--stamp); color: #fff; }
+.btn-main:hover { background: #1c37a3; }
+.btn-danger { border-color: var(--bad); color: var(--bad); }
+.btn-danger:hover { background: #fbeceb; }
+.btn-sm { padding: 5px 10px; font-size: 13px; }
+.btn[disabled] { opacity: .5; cursor: not-allowed; }
+.row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+
+/* ── Parte alta: stato + fila ── */
+.top { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 24px; align-items: start; margin-bottom: 28px; }
+.panel { background: var(--card); border-left: 6px solid var(--stamp); padding: 20px 22px; }
+.panel h2 { margin-bottom: 8px; }
+.panel .row { margin-top: 12px; }
+.panel-turn { background: var(--flag); border-left-color: var(--ink); }
+.turn-head { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.turn-clock { font-family: var(--serif); font-size: 64px; line-height: 1; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+.panel-ok { border-left-color: var(--ok); }
+.panel-closed { border-left-color: var(--ink3); }
+.big-cd { font-family: var(--serif); font-size: 26px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.muted { color: var(--ink2); }
+.small { font-size: 13px; }
+
+.queue h3 { margin-bottom: 8px; }
+.queue ol { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.queue li { display: flex; align-items: center; gap: 10px; padding: 8px 2px; border-bottom: 1px solid var(--line); }
+.queue .pos { width: 26px; text-align: right; color: var(--ink3); font-variant-numeric: tabular-nums; }
+.queue .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.queue li.is-active { background: var(--flag-soft); font-weight: 600; }
+.queue li.is-me .nm::after { content: " (tu)"; color: var(--ink2); font-weight: 400; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 99px; background: var(--line2); color: var(--ink2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.chip-live { background: var(--ink); color: #fff; }
+.queue .foot { margin-top: 8px; }
+
+/* ── Griglia turni ── */
+.grid-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+.weeknav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; color: var(--ink2); margin: 10px 0 0; }
+.legend i { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin-right: 6px; border: 1px solid var(--line); background: #fff; }
+.legend .l-mine { background: var(--ink); border-color: var(--ink); }
+.legend .l-taken { background: #e3e8f1; border-color: #e3e8f1; }
+.legend .l-extra { background: #f8d7d4; border-color: var(--bad); }
+.scroll { overflow-x: auto; background: var(--card); border: 1px solid var(--line); }
+table.grid { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 680px; table-layout: fixed; }
+.grid th { font-weight: 600; text-align: left; padding: 10px 8px 8px; border-bottom: 1px solid var(--line); background: var(--card); }
+.grid th .dn { display: block; }
+.grid th .dd { display: block; font-weight: 400; color: var(--ink2); font-size: 13px; }
+.grid th.hr, .grid td.hr { width: 78px; position: sticky; left: 0; background: var(--card); z-index: 1; border-right: 1px solid var(--line2); }
+.grid td { padding: 3px; border-bottom: 1px solid var(--line2); }
+.grid td.hr { font-variant-numeric: tabular-nums; color: var(--ink2); font-size: 13px; padding: 3px 8px; }
+.grid tr:last-child td { border-bottom: 0; }
+.cell { display: block; width: 100%; min-height: 40px; font: inherit; font-size: 13px; text-align: left; padding: 4px 8px; border: 1px solid var(--line); border-radius: 3px; background: #fff; color: var(--ink3); cursor: default; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cell.taken { background: #e3e8f1; border-color: #e3e8f1; color: var(--ink); }
+.cell.mine { background: var(--ink); border-color: var(--ink); color: #fff; font-weight: 600; }
+.cell.act { cursor: pointer; }
+.grid.editing .cell.free { border: 1px dashed #d9a21b; color: var(--ink2); }
+.cell.free.act:hover { background: var(--flag-soft); border-color: var(--flag); color: var(--ink); }
+.cell.mine.act:hover { background: #2a3a63; }
+.cell.taken.act:hover { background: #d3daea; }
+.cell.taken.extra { background: #f8d7d4; border-color: #e3a29d; color: var(--bad); font-weight: 600; }
+.cell.mine.extra { background: var(--bad); border-color: var(--bad); color: #fff; }
+.cell.taken.extra.act:hover { background: #f1c0bb; }
+.cell.mine.extra.act:hover { background: #8f1d17; }
+
+/* ── Schede amministratore ── */
+.card { background: var(--card); border: 1px solid var(--line); padding: 20px 22px; margin-bottom: 24px; }
+.card h2 { margin-bottom: 10px; }
+label { display: block; font-weight: 600; margin-bottom: 4px; }
+input, select, textarea { font: inherit; padding: 8px 10px; border: 1.5px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); width: 100%; max-width: 420px; }
+input:focus, select:focus, textarea:focus { border-color: var(--stamp); outline: none; box-shadow: 0 0 0 3px rgba(35, 66, 196, .18); }
+textarea { max-width: 520px; display: block; margin-bottom: 12px; }
+.field { margin-bottom: 14px; }
+.field .hint { font-size: 13px; color: var(--ink2); margin-top: 3px; }
+.fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 24px; }
+table.list { width: 100%; border-collapse: collapse; }
+.list th { text-align: left; font-weight: 600; padding: 8px 10px; border-bottom: 2px solid var(--ink); font-size: 14px; }
+.list td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.list td.act { text-align: right; white-space: nowrap; }
+.list td.act .btn { margin-left: 4px; }
+.mono { font-variant-numeric: tabular-nums; }
+.off { color: var(--ink3); }
+ul.log { list-style: none; padding: 0; margin: 0; }
+ul.log li { padding: 6px 0; border-bottom: 1px solid var(--line2); display: flex; gap: 14px; }
+ul.log time { color: var(--ink2); min-width: 130px; font-variant-numeric: tabular-nums; }
+.tbl-scroll { overflow-x: auto; }
+
+/* ── Accesso ── */
+.login { max-width: 400px; margin: 9vh auto 0; padding: 0 20px; }
+.login .box { background: var(--card); border-top: 6px solid var(--ink); padding: 28px 26px 26px; }
+.login h1 { font-size: 28px; margin-bottom: 6px; }
+.login .btn { width: 100%; margin-top: 6px; }
+.login input { max-width: none; }
+.err { color: var(--bad); margin: 8px 0 0; min-height: 22px; font-weight: 500; }
+
+/* ── Finestra di dialogo e avvisi ── */
+dialog { border: 0; padding: 22px 24px; max-width: min(560px, calc(100vw - 24px)); width: 100%; box-shadow: 0 10px 40px rgba(16, 27, 51, .3); background: var(--card); color: var(--ink); border-top: 6px solid var(--ink); }
+dialog::backdrop { background: rgba(16, 27, 51, .55); }
+dialog h2 { margin-bottom: 10px; }
+dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
+.dlg-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 16px; }
+.warn { background: var(--flag-soft); padding: 8px 12px; margin-bottom: 12px; border-left: 4px solid var(--flag); }
+
+#toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 50; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; width: calc(100% - 32px); max-width: 520px; }
+.toast { background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 4px; box-shadow: 0 6px 20px rgba(16, 27, 51, .3); text-align: center; }
+.toast.bad { background: var(--bad); }
+
+@media (max-width: 820px) {
+  .top { grid-template-columns: minmax(0, 1fr); }
+  .wrap { padding: 16px; }
+  .bar-in, .tabs-in { padding-left: 16px; padding-right: 16px; }
+  .turn-clock { font-size: 52px; }
+}
+
+@media print {
+  body { background: #fff; }
+  .bar, .tabs, .noprint, #toast { display: none !important; }
+  .wrap { padding: 0; max-width: none; }
+  .top { display: none; }
+  .scroll { border: 0; overflow: visible; }
+  table.grid { min-width: 0; }
+  .cell.mine { background: #fff; color: var(--ink); border-color: var(--ink); }
+  .cell.extra, .cell.mine.extra { background: #fff; color: var(--bad); border-color: var(--bad); }
+  body.print-cred #app { display: none; }
+  body.print-cred dialog[open] { position: static; box-shadow: none; max-width: none; border-top: 0; padding: 0; }
+  body.print-cred dialog .dlg-actions { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+</style>
+</head>
+<body>
+  <div id="app"></div>
+  <dialog id="dlg"></dialog>
+  <div id="toast" role="status" aria-live="polite"></div>
+  <script>window.APP_URL = location.href.split('#')[0].split('?')[0];</script>
+  <script>
+(() => {
+  'use strict';
+
+  // ───────────── Costanti e utilità ─────────────
+  const DAY_SHORT = ['Lun', 'Mar', 'Mer', 'Gio', 'Ven'];
+  const DAY_LONG = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì'];
+  const WEEKDAYS = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+  const MONTHS = ['gennaio', 'febbraio', 'marzo', 'aprile', 'maggio', 'giugno', 'luglio', 'agosto', 'settembre', 'ottobre', 'novembre', 'dicembre'];
+  const PHASE_LABEL = {
+    prequeue: 'Sala d\'attesa aperta',
+    open: 'Prenotazioni aperte',
+    full: 'Tutti i turni sono occupati',
+    expired: 'Finestra di prenotazione chiusa',
+    closed: 'Prenotazioni chiuse dall\'amministratore',
+  };
+  const END_REASON = {
+    finished: 'Hai terminato il tuo turno.',
+    timeout: 'Il tempo a tua disposizione è scaduto.',
+    full: 'Nel frattempo tutti i turni sono stati occupati.',
+    admin: 'L\'amministratore ha chiuso il tuo turno.',
+    expired: 'La finestra di prenotazione si è chiusa.',
+    closed: 'Le prenotazioni sono state chiuse.',
+  };
+
+  const app = document.getElementById('app');
+  const dlg = document.getElementById('dlg');
+  const toastBox = document.getElementById('toast');
+
+  let S = null;            // ultimo stato dal server
+  let me = null;           // utente collegato
+  let tab = 'turni';
+  let viewWeek = null;     // null = prima settimana del ciclo in prenotazione
+  let skew = 0;            // orario server - orario locale
+  let sigPrev = '';
+  let busy = false;
+  let pollTimer = null;
+  let tickTimer = null;
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const serverNow = () => Date.now() + skew;
+
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    if (props) {
+      for (const [k, v] of Object.entries(props)) {
+        if (v == null || v === false) continue;
+        if (k === 'class') el.className = v;
+        else if (k === 'dataset') Object.assign(el.dataset, v);
+        else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+        else el.setAttribute(k, v === true ? '' : v);
+      }
+    }
+    const add = (k) => {
+      if (k == null || k === false) return;
+      if (Array.isArray(k)) k.forEach(add);
+      else el.append(k instanceof Node ? k : document.createTextNode(String(k)));
+    };
+    kids.forEach(add);
+    return el;
+  }
+
+  function addDays(s, n) {
+    const [y, m, d] = s.split('-').map(Number);
+    const t = new Date(Date.UTC(y, m - 1, d + n));
+    return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  }
+  const fmtDay = (s) => { const [, m, d] = s.split('-'); return `${d}/${m}`; };
+  function weekLabel(days) {
+    const [y1, m1, d1] = days[0].split('-').map(Number);
+    const [y2, m2, d2] = days[4].split('-').map(Number);
+    return m1 === m2
+      ? `${d1}–${d2} ${MONTHS[m1 - 1]} ${y1}`
+      : `${d1} ${MONTHS[m1 - 1]} – ${d2} ${MONTHS[m2 - 1]} ${y2}`;
+  }
+  const fmtWhen = (ts) => new Intl.DateTimeFormat('it-IT', {
+    timeZone: 'Europe/Rome', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit',
+  }).format(new Date(ts));
+  const fmtLog = (ts) => new Intl.DateTimeFormat('it-IT', {
+    timeZone: 'Europe/Rome', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).format(new Date(ts));
+  const plural = (n, one, many) => (n === 1 ? one : many);
+
+  function fmtCd(ms, fmt) {
+    const s = Math.ceil(Math.max(0, ms) / 1000);
+    if (fmt === 'clock') return `${Math.floor(s / 60)}:${pad(s % 60)}`;
+    const d = Math.floor(s / 86400), hh = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+    if (d > 0) return `${d} ${plural(d, 'giorno', 'giorni')} ${hh} h ${m} min`;
+    if (hh > 0) return `${hh} h ${m} min ${pad(sec)} s`;
+    return `${m} min ${pad(sec)} s`;
+  }
+  function cd(deadline, fmt, cls) {
+    return h('span', { class: cls || '', dataset: { cd: String(deadline), fmt } }, fmtCd(deadline - serverNow(), fmt));
+  }
+  function tick() {
+    for (const el of document.querySelectorAll('[data-cd]')) {
+      el.textContent = fmtCd(Number(el.dataset.cd) - serverNow(), el.dataset.fmt);
+    }
+  }
+
+  function toast(msg, bad) {
+    const t = h('div', { class: 'toast' + (bad ? ' bad' : '') }, msg);
+    toastBox.append(t);
+    setTimeout(() => t.remove(), bad ? 5000 : 2800);
+  }
+
+  const TOK = 'turni_token';
+  let memTok = null;
+  const getTok = () => { try { return localStorage.getItem(TOK) || memTok; } catch { return memTok; } };
+  const setTok = (t) => { memTok = t; try { t ? localStorage.setItem(TOK, t) : localStorage.removeItem(TOK); } catch { /* ignora */ } };
+
+  // ───────────── Collegamento a Supabase ─────────────
+  const SUPABASE_URL = 'https://qinkysjtxborkwvaiqoo.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_UCVePtbIxdklv14pWqp7Ww_2DDRMxq0';   // chiave pubblica: può stare nella pagina
+
+  // Traduce le chiamate dell'interfaccia nelle funzioni del database (vedi 01_schema.sql)
+  function rpcFor(method, path, q, b, tok) {
+    const t = { p_token: tok || null };
+    switch (method + ' ' + path) {
+      case 'POST /api/login': return ['app_login', { p_username: b.username, p_password: b.password }];
+      case 'POST /api/logout': return ['app_logout', t];
+      case 'GET /api/me': return ['app_me', t];
+      case 'POST /api/change-password': return ['app_change_password', { ...t, p_current: b.current, p_next: b.next }];
+      case 'GET /api/state': return ['app_state', { ...t, p_week: q.week || null }];
+      case 'POST /api/queue/join': return ['app_join', t];
+      case 'POST /api/queue/leave': return ['app_leave', t];
+      case 'POST /api/queue/finish': return ['app_finish', t];
+      case 'POST /api/book': return ['app_book', { ...t, p_week: b.week || null, p_day: b.day, p_hour: b.hour }];
+      case 'POST /api/unbook': return ['app_unbook', { ...t, p_week: b.week || null, p_day: b.day, p_hour: b.hour }];
+      case 'POST /api/admin/slot': return ['app_admin_slot', { ...t, p_week: b.week, p_day: b.day, p_hour: b.hour, p_user_id: b.userId || null }];
+      case 'POST /api/admin/queue': return ['app_admin_queue', { ...t, p_action: b.action, p_user_id: b.userId }];
+      case 'POST /api/admin/config': return ['app_admin_config', { ...t, p_cfg: b }];
+      case 'GET /api/admin/users': return ['app_admin_users', t];
+      case 'POST /api/admin/users': return ['app_admin_create_users', { ...t, p_names: b.names, p_role: b.role }];
+      case 'GET /api/admin/log': return ['app_admin_log', t];
+      case 'GET /api/admin/export': return ['app_admin_export', { ...t, p_week: q.week || null }];
+    }
+    const m = path.match(/^\/api\/admin\/users\/([^/]+)\/(reset|update|delete)$/);
+    if (m && m[2] === 'reset') return ['app_admin_reset', { ...t, p_user_id: m[1] }];
+    if (m && m[2] === 'delete') return ['app_admin_delete_user', { ...t, p_user_id: m[1] }];
+    if (m && m[2] === 'update') return ['app_admin_update_user', { ...t, p_user_id: m[1], p_name: b.name === undefined ? null : b.name, p_active: b.active === undefined ? null : b.active }];
+    return null;
+  }
+
+  async function callServer(method, url, body) {
+    const [path, qs] = url.split('?');
+    const query = Object.fromEntries(new URLSearchParams(qs || ''));
+    const call = rpcFor(method, path, query, body || {}, getTok());
+    if (!call) return { status: 404, data: { error: 'Non trovato' } };
+    const res = await fetch(SUPABASE_URL + '/rest/v1/rpc/' + call[0], {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_KEY },
+      body: JSON.stringify(call[1]),
+    });
+    let data = null;
+    try { data = await res.json(); } catch { /* risposta vuota */ }
+    if (!res.ok) return { status: res.status, data: { error: (data && data.message) || 'Operazione non riuscita' } };
+    if (data && data.error && data.status) return { status: data.status, data: { error: data.error } };   // es. accesso errato
+    return { status: 200, data: data };
+  }
+
+  async function api(method, url, body) {
+    const quiet = url === '/api/me' || url === '/api/login';
+    let res;
+    try { res = await callServer(method, url, body); }
+    catch { throw new Error('Connessione assente. Controlla la rete e riprova.'); }
+    const data = res && res.data;
+    if (url === '/api/login' && res.status === 200) setTok(data.token);
+    if (url === '/api/logout') setTok(null);
+    if (res.status === 401 && !quiet) { onLoggedOut(); throw new Error('Sessione scaduta: accedi di nuovo.'); }
+    if (res.status !== 200) throw new Error((data && data.error) || 'Operazione non riuscita');
+    return data;
+  }
+
+  // ───────────── Dialoghi ─────────────
+  function showDialog(nodes, wide) {
+    dlg.className = wide ? 'wide' : '';
+    dlg.replaceChildren(...nodes);
+    if (!dlg.open) dlg.showModal();
+  }
+  function closeDialog() { if (dlg.open) dlg.close(); }
+  dlg.addEventListener('click', (e) => { if (e.target === dlg) closeDialog(); });
+  dlg.addEventListener('close', () => document.body.classList.remove('print-cred'));
+
+  // ───────────── Accesso ─────────────
+  function showLogin(message) {
+    stopLive();
+    S = null; me = null;
+    const err = h('p', { class: 'err', role: 'alert' }, message || '');
+    const user = h('input', { id: 'u', name: 'username', autocomplete: 'username', autocapitalize: 'none', spellcheck: 'false', required: true });
+    const pass = h('input', { id: 'p', name: 'password', type: 'password', autocomplete: 'current-password', required: true });
+    const btn = h('button', { class: 'btn btn-dark', type: 'submit' }, 'Accedi');
+    const form = h('form', {
+      onsubmit: async (e) => {
+        e.preventDefault();
+        btn.disabled = true; err.textContent = '';
+        try {
+          const r = await api('POST', '/api/login', { username: user.value, password: pass.value });
+          me = r.user;
+          if (me.mustChange) showForcedChange(pass.value); else startApp();
+        } catch (ex) {
+          err.textContent = ex.message; btn.disabled = false; pass.select();
+        }
+      },
+    },
+    h('div', { class: 'field' }, h('label', { for: 'u' }, 'Nome utente'), user),
+    h('div', { class: 'field' }, h('label', { for: 'p' }, 'Password'), pass),
+    btn, err);
+    app.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'box' },
+      h('h1', null, 'Turni in biblioteca'),
+      h('p', { class: 'muted' }, 'Accedi con l\'account personale che ti ha dato l\'amministratore.'),
+      form)));
+    user.focus();
+  }
+
+  function showForcedChange(currentPw) {
+    stopLive();
+    const err = h('p', { class: 'err', role: 'alert' });
+    const cur = h('input', { id: 'c', type: 'password', autocomplete: 'current-password', required: true, value: currentPw || '' });
+    const n1 = h('input', { id: 'n1', type: 'password', autocomplete: 'new-password', minlength: '8', required: true });
+    const n2 = h('input', { id: 'n2', type: 'password', autocomplete: 'new-password', minlength: '8', required: true });
+    const btn = h('button', { class: 'btn btn-dark', type: 'submit' }, 'Salva la password');
+    const form = h('form', {
+      onsubmit: async (e) => {
+        e.preventDefault();
+        err.textContent = '';
+        if (n1.value !== n2.value) { err.textContent = 'Le due password non coincidono.'; return; }
+        btn.disabled = true;
+        try {
+          const r = await api('POST', '/api/change-password', { current: cur.value, next: n1.value });
+          me = r.user; startApp();
+        } catch (ex) { err.textContent = ex.message; btn.disabled = false; }
+      },
+    },
+    h('div', { class: 'field' }, h('label', { for: 'c' }, 'Password provvisoria'), cur),
+    h('div', { class: 'field' }, h('label', { for: 'n1' }, 'Nuova password'), n1,
+      h('div', { class: 'hint' }, 'Almeno 8 caratteri. Sceglila tu: nessun altro deve conoscerla.')),
+    h('div', { class: 'field' }, h('label', { for: 'n2' }, 'Ripeti la nuova password'), n2),
+    btn, err);
+    app.replaceChildren(h('div', { class: 'login' }, h('div', { class: 'box' },
+      h('h1', null, `Ciao ${me.name.split(' ')[0]}`),
+      h('p', { class: 'muted' }, 'Prima di continuare, sostituisci la password provvisoria con una tua.'),
+      form)));
+    (currentPw ? n1 : cur).focus();
+  }
+
+  function changePasswordDialog() {
+    const err = h('p', { class: 'err', role: 'alert' });
+    const cur = h('input', { id: 'c', type: 'password', autocomplete: 'current-password', required: true });
+    const n1 = h('input', { id: 'n1', type: 'password', autocomplete: 'new-password', minlength: '8', required: true });
+    const n2 = h('input', { id: 'n2', type: 'password', autocomplete: 'new-password', minlength: '8', required: true });
+    const save = async (e) => {
+      e.preventDefault();
+      err.textContent = '';
+      if (n1.value !== n2.value) { err.textContent = 'Le due password non coincidono.'; return; }
+      try {
+        await api('POST', '/api/change-password', { current: cur.value, next: n1.value });
+        closeDialog(); toast('Password cambiata');
+      } catch (ex) { err.textContent = ex.message; }
+    };
+    showDialog([
+      h('h2', null, 'Cambia password'),
+      h('form', { onsubmit: save },
+        h('div', { class: 'field' }, h('label', { for: 'c' }, 'Password attuale'), cur),
+        h('div', { class: 'field' }, h('label', { for: 'n1' }, 'Nuova password'), n1),
+        h('div', { class: 'field' }, h('label', { for: 'n2' }, 'Ripeti la nuova password'), n2),
+        err,
+        h('div', { class: 'dlg-actions' },
+          h('button', { class: 'btn btn-dark', type: 'submit' }, 'Salva la password'),
+          h('button', { class: 'btn', type: 'button', onclick: closeDialog }, 'Annulla'))),
+    ]);
+    cur.focus();
+  }
+
+  async function logout() {
+    try { await api('POST', '/api/logout'); } catch { /* già uscito */ }
+    showLogin();
+  }
+  function onLoggedOut() { showLogin('La sessione è scaduta. Accedi di nuovo.'); }
+
+  // ───────────── Collegamento in tempo reale ─────────────
+  let ws = null, wsBeat = null, wsRetry = null, wsDebounce = null;
+  function connect() { openLive(); }
+  function openLive() {
+    if (ws && ws.readyState <= 1) return;
+    try { ws = new WebSocket(SUPABASE_URL.replace('https://', 'wss://') + '/realtime/v1/websocket?apikey=' + SUPABASE_KEY + '&vsn=1.0.0'); }
+    catch { return; }
+    const sock = ws;
+    sock.onopen = () => {
+      sock.send(JSON.stringify({ topic: 'realtime:turni', event: 'phx_join', ref: '1', payload: { config: { broadcast: { self: false }, presence: { key: '' }, private: false } } }));
+      wsBeat = setInterval(() => { try { sock.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: '2' })); } catch { /* ignora */ } }, 25000);
+    };
+    sock.onmessage = (ev) => {
+      try {
+        const m = JSON.parse(ev.data);
+        if (m.event === 'broadcast' && m.payload && m.payload.event === 'tick') {
+          clearTimeout(wsDebounce);
+          wsDebounce = setTimeout(() => { if (!inflight && !busy && !pend && !document.hidden) refresh(); }, 120);
+        }
+      } catch { /* ignora */ }
+    };
+    sock.onclose = () => { clearInterval(wsBeat); if (ws === sock) ws = null; if (tickTimer) { clearTimeout(wsRetry); wsRetry = setTimeout(openLive, 5000); } };
+    sock.onerror = () => { try { sock.close(); } catch { /* ignora */ } };
+  }
+  function stopLive() {
+    clearTimeout(pollTimer); clearInterval(tickTimer); clearTimeout(wsRetry); clearTimeout(wsDebounce); clearInterval(wsBeat);
+    pollTimer = tickTimer = null;
+    if (ws) { try { ws.close(); } catch { /* ignora */ } ws = null; }
+  }
+  let inflight = false;
+  function pollDelay() {
+    if (document.hidden) return 15000;
+    if (!S) return 3000;
+    if (S.user.role === 'admin' || S.queue.me.status === 'active' || S.queue.me.status === 'waiting') return S.cyclePhase === 'open' || S.cyclePhase === 'prequeue' ? 2000 : 10000;
+    if (S.cyclePhase === 'open') return 4000;
+    if (S.cyclePhase === 'prequeue' && S.cycle.openingTs - serverNow() < 20 * 60000) return 3000;
+    return 20000;
+  }
+  function schedulePoll() {
+    clearTimeout(pollTimer);
+    pollTimer = setTimeout(async () => { if (!inflight && !busy && !pend) await refresh(); schedulePoll(); }, pollDelay());
+  }
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && tickTimer) refresh(); });
+  async function refresh() {
+    inflight = true;
+    try { await refresh0(); } finally { inflight = false; }
+  }
+  async function refresh0() {
+    try {
+      applyState(await api('GET', '/api/state' + (viewWeek ? `?week=${viewWeek}` : '')));
+    } catch (ex) { /* gestito da api() */ }
+  }
+
+  function startApp() {
+    stopLive();
+    S = null; sigPrev = ''; tab = 'turni'; viewWeek = null;
+    buildShell();
+    connect();
+    refresh();
+    schedulePoll();
+    tickTimer = setInterval(tick, 250);
+  }
+
+  function applyState(next) {
+    if (viewWeek ? next.week !== viewWeek : next.week !== next.cycle.week1) return; // risposta di un'altra settimana
+    skew = next.now - Date.now();
+    const sig = JSON.stringify(next, (k, v) => (k === 'now' || k === 'remainingMs' ? 0 : v));
+    const first = !S;
+    S = next;
+    if (first) buildShell();
+    if (sig === sigPrev) return;
+    sigPrev = sig;
+    if (tab === 'turni') renderTurni();
+  }
+
+  // ───────────── Struttura della pagina ─────────────
+  function buildShell() {
+    const isAdmin = me.role === 'admin';
+    const tabs = isAdmin ? h('nav', { class: 'tabs', 'aria-label': 'Sezioni' }, h('div', { class: 'tabs-in' },
+      [['turni', 'Turni e fila'], ['studenti', 'Studenti'], ['impostazioni', 'Impostazioni'], ['registro', 'Registro']].map(([id, label]) =>
+        h('button', { class: 'tab', 'aria-current': id === tab ? 'page' : null, onclick: () => switchTab(id) }, label)))) : null;
+    app.replaceChildren(...[
+      h('header', { class: 'bar' }, h('div', { class: 'bar-in' },
+        h('div', { class: 'brand' }, 'Turni in biblioteca'),
+        h('div', { class: 'who' },
+          h('span', { class: 'name' }, me.name),
+          h('button', { class: 'link', onclick: changePasswordDialog }, 'Cambia password'),
+          h('button', { class: 'link', onclick: logout }, 'Esci')))),
+      tabs,
+      h('main', { class: 'wrap', id: 'main' }),
+    ].filter(Boolean));
+    if (S && tab === 'turni') renderTurni();
+  }
+
+  function switchTab(id) {
+    tab = id;
+    document.querySelectorAll('.tab').forEach((b, i) => {
+      const ids = ['turni', 'studenti', 'impostazioni', 'registro'];
+      if (ids[i] === id) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+    });
+    if (id === 'turni') { sigPrev = ''; if (S) renderTurni(); }
+    else if (id === 'studenti') renderStudenti();
+    else if (id === 'impostazioni') renderImpostazioni();
+    else renderRegistro();
+  }
+
+  // ───────────── Pagina "Turni" ─────────────
+  function renderTurni() {
+    const main = document.getElementById('main');
+    if (!main || !S) return;
+    const isAdmin = me.role === 'admin';
+    main.replaceChildren(
+      h('div', { class: 'top' }, isAdmin ? adminPanel() : statusPanel(), queuePanel()),
+      gridSection(),
+    );
+    tick();
+  }
+
+  let pend = 0;
+  async function quickSlot(kind, day, hour) {
+    if (!S || !(S.canEdit || S.extraOnly)) return;
+    const key = (x) => x.day === day && x.hour === hour;
+    if (kind === 'book') {
+      if (S.slots.some(key)) return;
+      const date = S.weekDays[day];
+      const near = date === S.today || date === addDays(S.today, 1);   // settimana precedente e ore extra: solo oggi e domani
+      if (!S.canEdit && !near) { toast('Settimana in corso: puoi prenotare solo i turni liberi di oggi e di domani', true); return; }
+      if (S.myCycleHours >= S.config.maxHours && !near) { toast('Hai già raggiunto il massimo di ' + S.config.maxHours + ' ore sulle due settimane: puoi superarlo solo per i turni liberi di oggi e di domani', true); return; }
+    }
+    const week = S.week;
+    const next = JSON.parse(JSON.stringify(S));
+    next.now = serverNow();
+    if (kind === 'book') {
+      next.slots.push({ day, hour, userId: me.id, name: me.name, by: 'student', extra: S.myCycleHours >= S.config.maxHours || undefined });
+      next.myHours++; next.myCycleHours++; next.filledSlots++;
+    } else {
+      next.slots = next.slots.filter((x) => !key(x)); next.myHours--; next.myCycleHours--; next.filledSlots--;
+    }
+    applyState(next);
+    pend++;
+    try {
+      const data = await api('POST', kind === 'book' ? '/api/book' : '/api/unbook', { week, day, hour });
+      if (pend === 1 && data && data.week === week) applyState(data);
+    } catch (ex) {
+      toast(ex.message, true);
+      pend--; await refresh(); pend++;
+    } finally { pend--; }
+  }
+
+  async function act(fn, okMsg) {
+    if (busy) return;
+    busy = true;
+    try {
+      const data = await fn();
+      if (data && data.week && data.cycle && (viewWeek ? data.week === viewWeek : data.week === data.cycle.week1)) applyState(data);
+      if (data && data.warning) toast(data.warning, true);
+      else if (okMsg) toast(okMsg);
+    } catch (ex) {
+      toast(ex.message, true);
+      refresh();
+    } finally { busy = false; }
+  }
+
+  function nextOpeningNote() {
+    return h('p', { class: 'muted' }, 'Le prenotazioni si aprono ogni due ',
+      WEEKDAYS[S.config.openWeekday].toLowerCase(), ' alle ', S.config.openTime, '. Prossima apertura: ',
+      h('strong', null, fmtWhen(S.cycle.opensAt)), '.');
+  }
+
+  function statusPanel() {
+    const q = S.queue.me, ph = S.cyclePhase, cfg = S.config;
+    const hrs = S.myCycleHours;
+    const hoursText = `Hai prenotato ${hrs} ${plural(hrs, 'ora', 'ore')} su ${cfg.maxHours} nelle due settimane.`;
+    const extraNote = () => h('p', { class: 'muted', style: 'margin-top:18px' }, `È possibile prenotare turni eccedendo le ${cfg.maxHours} ore complessive sulle due settimane soltanto per i turni rimasti scoperti e a partire dal giorno immediatamente precedente quello di riferimento (es. se mercoledì sono presenti turni scoperti, ci si può prenotare eccedendo il limite soltanto a partire da martedì).`);
+    const joinBtn = () => h('button', { class: 'btn btn-main', onclick: () => act(() => api('POST', '/api/queue/join'), 'Sei in fila') }, 'Entra in fila');
+
+    if (q.status === 'active' && ph === 'open') {
+      return h('section', { class: 'panel panel-turn' },
+        h('div', { class: 'turn-head' }, h('h2', null, 'Tocca a te'), cd(S.now + q.remainingMs, 'clock', 'turn-clock')),
+        h('p', null, hoursText),
+        h('p', null, 'Tocca un turno libero per prenotarlo. Tocca un tuo turno per liberarlo. Usa i pulsanti sopra la griglia per spostarti tra la 1ª e la 2ª settimana.'),
+        hrs >= cfg.maxHours ? h('p', null, `Hai raggiunto il massimo di ${cfg.maxHours} ore sulle due settimane: puoi prenotare ancora solo i turni liberi di oggi e di domani, che compariranno in rosso.`) : null,
+        S.today <= addDays(S.cycle.week1, -3) ? h('p', { class: 'muted small' }, `La settimana precedente al ciclo termina venerdì: puoi prenotare anche lì i turni liberi di oggi e di domani (oltre le ${cfg.maxHours} ore complessive sono extra), usando «‹ Precedente» sopra la griglia.`) : null,
+        h('div', { class: 'row', style: 'justify-content:flex-end' }, h('button', { class: 'btn btn-dark', onclick: () => act(() => api('POST', '/api/queue/finish'), 'Turno terminato') }, 'Ho finito')));
+    }
+    if (q.status === 'waiting') {
+      const ahead = q.pos;
+      const mins = Math.max(1, Math.round((ahead * cfg.turnSeconds) / 60));
+      return h('section', { class: 'panel' },
+        h('h2', null, ph === 'prequeue' ? 'Sei nella sala d\'attesa' : 'Sei in fila'),
+        ph === 'prequeue'
+          ? h('p', null, 'La fila parte alle ', h('strong', null, S.config.openTime), ' (tra ', cd(S.cycle.openingTs, 'long'), '). Riapri questa pagina poco prima dell\'apertura.')
+          : h('p', null, ahead === 0 ? 'Sei il prossimo.' : `Davanti a te ${ahead === 1 ? 'c\'è 1 persona' : `ci sono ${ahead} persone`}. Attesa stimata: circa ${mins} ${plural(mins, 'minuto', 'minuti')}.`,
+            ` Puoi anche chiudere la pagina o bloccare il telefono, ma ricordati di riaprirla qualche minuto prima del tuo turno: quando tocca a te hai ${cfg.turnSeconds} secondi e, se non ci sei, il turno passa al successivo.`),
+        h('div', { class: 'row' }, h('button', { class: 'btn', onclick: () => act(() => api('POST', '/api/queue/leave'), 'Sei uscito dalla fila') }, 'Esci dalla fila')));
+    }
+    if (q.status === 'done') {
+      return h('section', { class: 'panel panel-ok' }, h('h2', null, 'Il tuo turno è finito'),
+        h('p', null, (END_REASON[q.reason] || ''), ' ', hoursText),
+        S.canJoin
+          ? [h('p', null, 'Se vuoi modificare le tue prenotazioni o aggiungere altre ore puoi rimetterti in fila: verrai messo in coda dopo chi è già in attesa.'), h('div', { class: 'row' }, joinBtn())]
+          : h('p', { class: 'muted' }, 'Le prenotazioni non sono aperte.'),
+        extraNote());
+    }
+    // none / skipped, con fila aperta
+    const skipped = q.status === 'skipped';
+    return h('section', { class: 'panel' },
+      h('h2', null, ph === 'prequeue' ? 'Sala d\'attesa aperta' : 'Le prenotazioni sono aperte'),
+      skipped ? h('p', null, 'Il tuo turno è stato saltato perché non risultavi collegato da troppo tempo. Puoi rimetterti in fila.') : null,
+      ph === 'prequeue'
+        ? h('p', null, 'La fila parte alle ', h('strong', null, S.config.openTime), '. Chi entra prima viene servito prima.')
+        : h('p', null, `Quando arriva il tuo turno hai ${cfg.turnSeconds} secondi per scegliere fino a ${cfg.maxHours} ore complessive sulle due settimane.`),
+      S.canJoin ? h('div', { class: 'row' }, joinBtn()) : null);
+  }
+
+  function adminPanel() {
+    const ph = S.cyclePhase;
+    return h('section', { class: 'panel' + (ph === 'open' ? '' : ' panel-closed') },
+      h('h2', null, PHASE_LABEL[ph] || ph),
+      h('p', null, 'Settimane in prenotazione: ', h('strong', null, weekLabel(addDaysArr(S.cycle.week1))), ' e ', h('strong', null, weekLabel(addDaysArr(S.cycle.week2))), '.'),
+      h('p', { class: 'muted' }, ph === 'prequeue' ? ['La fila parte tra ', cd(S.cycle.openingTs, 'long'), '.']
+        : ['Prossima apertura: ', h('strong', null, fmtWhen(S.cycle.nextOpeningTs)), '.']),
+      h('div', { class: 'row noprint' },
+        h('button', { class: 'btn', onclick: async () => { try { const r = await api('GET', `/api/admin/export?week=${S.week}`); const a = h('a', { href: URL.createObjectURL(new Blob([r.csv], { type: 'text/csv;charset=utf-8' })), download: r.filename }); document.body.append(a); a.click(); a.remove(); } catch (ex) { toast(ex.message, true); } } }, 'Scarica CSV'),
+        h('button', { class: 'btn', onclick: () => window.print() }, 'Stampa')));
+  }
+  function addDaysArr(week) { return [0, 1, 2, 3, 4].map((i) => addDays(week, i)); }
+
+  function queuePanel() {
+    const isAdmin = me.role === 'admin';
+    const line = S.queue.line;
+    const items = line.map((e) => h('li', { class: (e.status === 'active' ? 'is-active ' : '') + (e.userId === me.id ? 'is-me' : '') },
+      h('span', { class: 'pos' }, e.status === 'active' ? '▶' : String(e.pos)),
+      h('span', { class: 'nm' }, e.name),
+      e.status === 'active'
+        ? h('span', { class: 'chip chip-live' }, 'in corso ', cd(S.now + e.remainingMs, 'clock'))
+        : h('span', { class: 'chip' }, 'in attesa'),
+      isAdmin ? h('button', { class: 'btn btn-sm', onclick: () => act(() => api('POST', '/api/admin/queue', { action: e.status === 'active' ? 'skip' : 'remove', userId: e.userId })) },
+        e.status === 'active' ? 'Termina' : 'Rimuovi') : null));
+    const finished = isAdmin ? S.queue.all.filter((e) => e.status === 'done' || e.status === 'skipped' || e.status === 'closed') : [];
+    return h('section', { class: 'queue' },
+      h('h3', null, 'Fila'),
+      line.length ? h('ol', null, items) : h('p', { class: 'muted' }, S.cyclePhase === 'open' || S.cyclePhase === 'prequeue' ? 'Nessuno in fila.' : 'La fila è chiusa.'),
+      h('p', { class: 'foot muted small' }, S.queue.doneCount
+        ? `${S.queue.doneCount} ${plural(S.queue.doneCount, 'persona ha', 'persone hanno')} già usato il turno.` : ''),
+      finished.length && isAdmin ? h('p', { class: 'muted small' }, 'Già passati: ', finished.map((e) => e.name).join(', '), '.') : null);
+  }
+
+  function gridSection() {
+    const isAdmin = me.role === 'admin';
+    const cfg = S.config;
+    const canEdit = S.canEdit;
+    const bySlot = new Map(S.slots.map((s) => [`${s.day}-${s.hour}`, s]));
+    const nearDay = (d) => S.weekDays[d] === S.today || S.weekDays[d] === addDays(S.today, 1);   // ore extra: solo oggi e domani
+
+    const thead = h('tr', null, h('th', { class: 'hr', scope: 'col' }, 'Ora'),
+      S.weekDays.map((d, i) => h('th', { scope: 'col' }, h('span', { class: 'dn' }, DAY_SHORT[i]), h('span', { class: 'dd' }, fmtDay(d)))));
+    const rows = [];
+    for (let hr = cfg.firstHour; hr <= cfg.lastHour; hr++) {
+      rows.push(h('tr', null,
+        h('td', { class: 'hr' }, `${pad(hr)}–${pad(hr + 1)}`),
+        [0, 1, 2, 3, 4].map((d) => {
+          const s = bySlot.get(`${d}-${hr}`);
+          const label = `${DAY_LONG[d]} ${pad(hr)}:00-${pad(hr + 1)}:00`;
+          let cls = 'cell', text = 'libero', onclick = null, status = 'libero';
+          if (!s) {
+            cls += ' free';
+            if (isAdmin) { onclick = () => assignDialog(d, hr, null); cls += ' act'; }
+            else if (canEdit || (S.extraOnly && nearDay(d))) { onclick = () => quickSlot('book', d, hr); cls += ' act'; }
+          } else if (s.userId === me.id) {
+            cls += ' mine'; text = 'Tu'; status = 'prenotato da te';
+            if (canEdit || (S.extraOnly && nearDay(d))) { onclick = () => quickSlot('unbook', d, hr); cls += ' act'; }
+          } else {
+            cls += ' taken'; text = s.name; status = `occupato da ${s.name}`;
+            if (isAdmin) { onclick = () => assignDialog(d, hr, s); cls += ' act'; }
+          }
+          if (s && s.extra) { cls += ' extra'; text += ' · extra'; status += ', ore extra oltre il limite'; }
+          return h('td', null, h('button', { class: cls, type: 'button', 'aria-label': `${label}, ${status}`, title: text, onclick, 'aria-disabled': onclick ? null : 'true', tabindex: onclick ? null : '-1' }, text));
+        })));
+    }
+
+    const prev = () => goWeek(addDays(S.week, -7));
+    const next = () => goWeek(addDays(S.week, 7));
+    const isCur = S.isCurrent;
+    const badge = S.weekIndex === 1 ? ' · 1ª settimana in prenotazione' : (S.weekIndex === 2 ? ' · 2ª settimana in prenotazione' : '');
+    return h('section', null,
+      h('div', { class: 'grid-head' },
+        h('div', null,
+          h('h2', null, 'Turni della settimana'),
+          h('p', { class: 'muted', style: 'margin:4px 0 0' }, weekLabel(S.weekDays), badge,
+            ` · ${S.filledSlots}/${S.totalSlots} turni occupati`,
+            !isAdmin ? ` · le tue ore (2 sett.): ${S.myCycleHours}/${cfg.maxHours}` : '')),
+        h('div', { class: 'weeknav noprint' },
+          h('button', { class: 'btn btn-sm', onclick: prev }, '‹ Precedente'),
+          S.week === S.cycle.week1 ? null : h('button', { class: 'btn btn-sm', onclick: () => goWeek(S.cycle.week1) }, '1ª settimana'),
+          S.week === S.cycle.week2 ? null : h('button', { class: 'btn btn-sm', onclick: () => goWeek(S.cycle.week2) }, '2ª settimana'),
+          h('button', { class: 'btn btn-sm', onclick: next }, 'Successiva ›'))),
+      h('div', { class: 'scroll' }, h('table', { class: 'grid' + (canEdit || S.extraOnly ? ' editing' : '') },
+        h('caption', { style: 'position:absolute;left:-9999px' }, `Turni della settimana ${weekLabel(S.weekDays)}`),
+        h('thead', null, thead), h('tbody', null, rows))),
+      h('p', { class: 'legend' },
+        h('span', null, h('i'), 'libero'),
+        h('span', null, h('i', { class: 'l-taken' }), 'occupato'),
+        h('span', null, h('i', { class: 'l-extra' }), 'ore extra (oltre il limite delle due settimane)'),
+        !isAdmin ? h('span', null, h('i', { class: 'l-mine' }), 'prenotato da te') : null,
+        !isCur ? h('span', null, 'Stai guardando una settimana esterna alle due settimane attualmente in prenotazione.') : null,
+        S.extraOnly ? h('span', null, `Settimana in corso: puoi prenotare solo i turni liberi di oggi e di domani (quelli oltre le ${cfg.maxHours} ore complessive sono extra).`) : null,
+        !isAdmin && !canEdit && isCur ? h('span', null, 'Potrai modificare i turni solo durante il tuo turno in fila.') : null));
+  }
+
+  function goWeek(w) {
+    viewWeek = w && w !== (S && S.cycle.week1) ? w : null;
+    sigPrev = '';
+    S = null;
+    connect();
+    refresh();
+  }
+
+  // ───────────── Assegnazione turni (amministratore) ─────────────
+  function assignDialog(day, hour, slot) {
+    const week = S.week;
+    const date = S.weekDays[day];
+    const sel = h('select', { id: 'sel' },
+      h('option', { value: '' }, 'Scegli uno studente'),
+      S.students.map((s) => h('option', { value: s.id, selected: slot && slot.userId === s.id ? true : null },
+        `${s.name} (${s.hours} ${plural(s.hours, 'ora', 'ore')} nelle 2 sett.)`)));
+    const send = (userId, msg) => async () => {
+      closeDialog();
+      await act(() => api('POST', '/api/admin/slot', { week, day, hour, userId }), msg);
+    };
+    showDialog([
+      h('h2', null, `${DAY_LONG[day]} ${fmtDay(date)}, ${pad(hour)}:00–${pad(hour + 1)}:00`),
+      h('p', null, slot ? ['Occupato da ', h('strong', null, slot.name), '.'] : 'Il turno è libero.'),
+      h('div', { class: 'field' }, h('label', { for: 'sel' }, slot ? 'Assegna a un altro studente' : 'Assegna a'), sel),
+      h('div', { class: 'dlg-actions' },
+        h('button', { class: 'btn btn-main', onclick: () => { if (!sel.value) { toast('Scegli uno studente', true); return; } send(sel.value, 'Turno assegnato')(); } }, 'Assegna'),
+        slot ? h('button', { class: 'btn btn-danger', onclick: send(null, 'Turno liberato') }, 'Libera il turno') : null,
+        h('button', { class: 'btn', onclick: closeDialog }, 'Annulla')),
+    ]);
+  }
+
+  // ───────────── Pagina "Studenti" ─────────────
+  async function renderStudenti() {
+    const main = document.getElementById('main');
+    main.replaceChildren(h('p', { class: 'muted' }, 'Caricamento…'));
+    let data;
+    try { data = await api('GET', '/api/admin/users'); } catch (ex) { toast(ex.message, true); return; }
+    if (tab !== 'studenti') return;
+    const ta = h('textarea', { rows: '6', id: 'names', placeholder: 'Mario Rossi\nGiulia Bianchi\n…' });
+    const asAdmin = h('input', { type: 'checkbox', id: 'asadmin', style: 'width:auto;margin-right:8px' });
+    const create = async () => {
+      const names = ta.value.split('\n').map((x) => x.trim()).filter(Boolean);
+      if (!names.length) { toast('Scrivi almeno un nome', true); return; }
+      try {
+        const r = await api('POST', '/api/admin/users', { names, role: asAdmin.checked ? 'admin' : 'student' });
+        credentialsDialog(r.created, 'Account creati');
+        renderStudenti();
+      } catch (ex) { toast(ex.message, true); }
+    };
+    const rows = data.users.map((u) => h('tr', { class: u.active ? '' : 'off' },
+      h('td', null, u.name, u.role === 'admin' ? h('span', { class: 'chip', style: 'margin-left:8px' }, 'amministratore') : null),
+      h('td', { class: 'mono' }, u.username),
+      h('td', { class: 'mono' }, u.role === 'student' ? String(u.hours) : '–'),
+      h('td', null, !u.active ? 'disattivato' : u.mustChange ? 'password provvisoria' : 'attivo'),
+      h('td', { class: 'act' },
+        h('button', { class: 'btn btn-sm', onclick: () => resetPw(u) }, 'Nuova password'),
+        u.id === me.id ? null : h('button', { class: 'btn btn-sm', onclick: () => toggleActive(u) }, u.active ? 'Disattiva' : 'Riattiva'),
+        u.id === me.id ? null : h('button', { class: 'btn btn-sm btn-danger', onclick: () => delUser(u) }, 'Elimina'))));
+    main.replaceChildren(
+      h('section', { class: 'card' },
+        h('h2', null, 'Aggiungi account'),
+        h('p', { class: 'muted' }, 'Scrivi un nome per riga. Ogni persona riceve un nome utente e una password provvisoria, che dovrà cambiare al primo accesso.'),
+        h('label', { for: 'names' }, 'Nomi'), ta,
+        h('div', { class: 'field' }, h('label', { for: 'asadmin', style: 'font-weight:400;display:flex;align-items:center' }, asAdmin, 'Crea come amministratori')),
+        h('button', { class: 'btn btn-dark', onclick: create }, 'Crea account')),
+      h('section', { class: 'card' },
+        h('h2', null, `Account (${data.users.length})`),
+        h('div', { class: 'tbl-scroll' }, h('table', { class: 'list' },
+          h('thead', null, h('tr', null, ['Nome', 'Nome utente', 'Ore (2 sett.)', 'Stato', ''].map((t) => h('th', { scope: 'col' }, t)))),
+          h('tbody', null, rows))),
+        h('p', { class: 'muted small', style: 'margin-top:10px' }, 'La colonna "Ore (2 sett.)" conta i turni complessivi nelle due settimane in prenotazione.')));
+  }
+
+  function credentialsDialog(list, title) {
+    const origin = window.APP_URL;
+    const tsv = list.map((c) => `${c.name}\t${c.username}\t${c.password}`).join('\n');
+    const csv = '﻿' + ['Nome;Nome utente;Password provvisoria;Indirizzo'].concat(list.map((c) => `"${c.name}";"${c.username}";"${c.password}";"${origin}"`)).join('\r\n');
+    showDialog([
+      h('h2', null, title),
+      h('p', null, 'Indirizzo della pagina: ', h('strong', null, origin)),
+      h('div', { class: 'warn' }, 'Queste password non saranno più visibili dopo la chiusura. Salvale o stampale ora e consegnale di persona.'),
+      h('div', { class: 'tbl-scroll' }, h('table', { class: 'list' },
+        h('thead', null, h('tr', null, ['Nome', 'Nome utente', 'Password provvisoria'].map((t) => h('th', { scope: 'col' }, t)))),
+        h('tbody', null, list.map((c) => h('tr', null, h('td', null, c.name), h('td', { class: 'mono' }, c.username), h('td', { class: 'mono' }, c.password)))))),
+      h('div', { class: 'dlg-actions' },
+        h('button', { class: 'btn', onclick: async () => { try { await navigator.clipboard.writeText(tsv); toast('Copiato'); } catch { toast('Copia non riuscita: usa Scarica CSV', true); } } }, 'Copia'),
+        h('button', { class: 'btn', onclick: () => {
+          const a = h('a', { href: URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })), download: 'credenziali.csv' });
+          document.body.append(a); a.click(); a.remove();
+        } }, 'Scarica CSV'),
+        h('button', { class: 'btn', onclick: () => { document.body.classList.add('print-cred'); window.print(); } }, 'Stampa'),
+        h('button', { class: 'btn btn-dark', onclick: closeDialog }, 'Chiudi')),
+    ], true);
+  }
+
+  async function resetPw(u) {
+    if (!confirm(`Generare una nuova password provvisoria per ${u.name}? Quella attuale smetterà di funzionare.`)) return;
+    try { credentialsDialog([await api('POST', `/api/admin/users/${u.id}/reset`)], 'Nuova password'); renderStudenti(); } catch (ex) { toast(ex.message, true); }
+  }
+  async function toggleActive(u) {
+    try { await api('POST', `/api/admin/users/${u.id}/update`, { active: !u.active }); renderStudenti(); } catch (ex) { toast(ex.message, true); }
+  }
+  async function delUser(u) {
+    if (!confirm(`Eliminare l'account di ${u.name}? Verranno cancellati anche i suoi turni prenotati. Se vuoi solo impedirgli l'accesso, usa "Disattiva".`)) return;
+    try { await api('POST', `/api/admin/users/${u.id}/delete`, {}); renderStudenti(); toast('Account eliminato'); } catch (ex) { toast(ex.message, true); }
+  }
+
+  // ───────────── Pagina "Impostazioni" ─────────────
+  function renderImpostazioni() {
+    const main = document.getElementById('main');
+    const c = S ? S.config : null;
+    if (!c) { main.replaceChildren(h('p', { class: 'muted' }, 'Caricamento…')); return; }
+    const num = (id, label, value, hint, min, max) => h('div', { class: 'field' }, h('label', { for: id }, label),
+      h('input', { id, type: 'number', value: String(value), min: String(min), max: String(max), inputmode: 'numeric' }), h('div', { class: 'hint' }, hint));
+    const day = h('select', { id: 'openWeekday' }, WEEKDAYS.map((d, i) => h('option', { value: String(i), selected: i === c.openWeekday ? true : null }, d)));
+    const time = h('input', { id: 'openTime', type: 'time', value: c.openTime });
+    const save = async (e) => {
+      e.preventDefault();
+      const v = (id) => document.getElementById(id).value;
+      try {
+        await api('POST', '/api/admin/config', {
+          turnSeconds: v('turnSeconds'), maxHours: v('maxHours'), openWeekday: v('openWeekday'),
+          openTime: v('openTime'), queueEarlyMinutes: v('queueEarlyMinutes'),
+        });
+        toast('Impostazioni salvate'); refresh();
+      } catch (ex) { toast(ex.message, true); }
+    };
+    main.replaceChildren(h('section', { class: 'card' },
+      h('h2', null, 'Impostazioni'),
+      h('form', { onsubmit: save },
+        h('div', { class: 'fields' },
+          num('turnSeconds', 'Durata del turno in fila (secondi)', c.turnSeconds, 'Dopo questo tempo tocca al successivo.', 10, 600),
+          num('maxHours', 'Ore massime sulle due settimane per studente', c.maxHours, 'Vale complessivamente per entrambe le settimane del turno.', 1, 110),
+          h('div', { class: 'field' }, h('label', { for: 'openWeekday' }, 'Giorno di apertura (ogni 2 settimane)'), day, h('div', { class: 'hint' }, 'Si prenotano le due settimane che iniziano il lunedì successivo.')),
+          h('div', { class: 'field' }, h('label', { for: 'openTime' }, 'Ora di apertura'), time, h('div', { class: 'hint' }, 'Ora italiana.')),
+          num('queueEarlyMinutes', 'Sala d\'attesa anticipata (minuti)', c.queueEarlyMinutes, '0 = si entra in fila solo all\'ora di apertura. Con un valore maggiore, chi arriva prima si mette prima in fila.', 0, 720)),
+        h('button', { class: 'btn btn-dark', type: 'submit' }, 'Salva le impostazioni'))));
+  }
+
+  // ───────────── Pagina "Registro" ─────────────
+  async function renderRegistro() {
+    const main = document.getElementById('main');
+    main.replaceChildren(h('p', { class: 'muted' }, 'Caricamento…'));
+    try {
+      const r = await api('GET', '/api/admin/log');
+      if (tab !== 'registro') return;
+      main.replaceChildren(h('section', { class: 'card' },
+        h('h2', null, 'Registro delle attività'),
+        h('p', { class: 'muted' }, 'Ultime 500 azioni: utile per chiarire chi ha prenotato o cambiato un turno.'),
+        r.log.length ? h('ul', { class: 'log' }, r.log.map((l) => h('li', null, h('time', null, fmtLog(l.ts)), h('span', null, l.text))))
+          : h('p', { class: 'muted' }, 'Ancora nessuna attività.')));
+    } catch (ex) { toast(ex.message, true); }
+  }
+
+  // ───────────── Avvio ─────────────
+  (async function boot() {
+    try {
+      const r = await api('GET', '/api/me');
+      me = r.user;
+    } catch { showLogin(); return; }
+    if (me.mustChange) showForcedChange(); else startApp();
+  })();
+})();
+
+  </script>
+</body>
+</html>
