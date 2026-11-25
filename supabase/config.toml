@@ -1,0 +1,2 @@
+[functions.queue-push]
+verify_jwt = false
