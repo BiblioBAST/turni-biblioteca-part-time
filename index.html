@@ -614,8 +614,10 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
   async function quickSlot(kind, day, hour) {
     if (!S || !(S.canEdit || S.extraOnly)) return;
     const key = (x) => x.day === day && x.hour === hour;
+    const here = S.slots.filter(key);
     if (kind === 'book') {
-      if (S.slots.some(key)) return;
+      if (here.some((x) => x.userId === me.id)) return;
+      if (here.length && !S.overlapOpen) { toast('Questo turno è già occupato: ci si può sovrapporre solo quando tutti i turni delle due settimane sono occupati', true); return; }
       const date = S.weekDays[day];
       if (date < S.today) { toast('Non puoi modificare i turni dei giorni passati', true); return; }
       const near = date === S.today || date === addDays(S.today, 1);   // settimana precedente e ore extra: solo oggi e domani
@@ -628,9 +630,10 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     next.now = serverNow();
     if (kind === 'book') {
       next.slots.push({ day, hour, userId: me.id, name: me.name, by: 'student', extra: S.myCycleHours >= S.config.maxHours || undefined });
-      next.myHours++; next.myCycleHours++; next.filledSlots++;
+      next.myHours++; next.myCycleHours++; if (!here.length) next.filledSlots++;
     } else {
-      next.slots = next.slots.filter((x) => !key(x)); next.myHours--; next.myCycleHours--; next.filledSlots--;
+      next.slots = next.slots.filter((x) => !(key(x) && x.userId === me.id)); next.myHours--; next.myCycleHours--;
+      if (!here.some((x) => x.userId !== me.id)) next.filledSlots--;
     }
     applyState(next);
     pend++;
@@ -674,7 +677,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
       return h('section', { class: 'panel panel-turn' },
         h('div', { class: 'turn-head' }, h('h2', null, 'Tocca a te'), cd(S.now + q.remainingMs, 'clock', 'turn-clock')),
         h('p', null, hoursText),
-        h('p', null, 'Tocca un turno libero per prenotarlo. Tocca un tuo turno per liberarlo. Usa i pulsanti sopra la griglia per spostarti tra la 1ª e la 2ª settimana.'),
+        h('p', null, (S.overlapOpen ? 'Tutti i turni delle due settimane sono occupati: puoi prenotare anche un turno già occupato, in sovrapposizione. Tocca un tuo turno per liberarlo. ' : 'Tocca un turno libero per prenotarlo. Tocca un tuo turno per liberarlo. ') + 'Usa i pulsanti sopra la griglia per spostarti tra la 1ª e la 2ª settimana.'),
         hrs >= cfg.maxHours ? h('p', null, `Hai raggiunto il massimo di ${cfg.maxHours} ore sulle due settimane: puoi prenotare ancora solo i turni liberi di oggi e di domani, che compariranno in rosso.`) : null,
         S.today <= addDays(S.cycle.week1, -3) ? h('p', { class: 'muted small' }, `La settimana precedente al ciclo termina venerdì: puoi prenotare anche lì i turni liberi di oggi e di domani (oltre le ${cfg.maxHours} ore complessive sono extra), usando «‹ Precedente» sopra la griglia.`) : null,
         Alerts.control(),
@@ -748,7 +751,8 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     const isAdmin = me.role === 'admin';
     const cfg = S.config;
     const canEdit = S.canEdit;
-    const bySlot = new Map(S.slots.map((s) => [`${s.day}-${s.hour}`, s]));
+    const bySlot = new Map();
+    S.slots.forEach((s) => { const k = `${s.day}-${s.hour}`; if (!bySlot.has(k)) bySlot.set(k, []); bySlot.get(k).push(s); });
     const pastDay = (d) => S.weekDays[d] < S.today;   // giorni passati: bloccati per gli studenti
     const nearDay = (d) => S.weekDays[d] === S.today || S.weekDays[d] === addDays(S.today, 1);   // ore extra: solo oggi e domani
 
@@ -759,21 +763,26 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
       rows.push(h('tr', null,
         h('td', { class: 'hr' }, `${pad(hr)}–${pad(hr + 1)}`),
         [0, 1, 2, 3, 4].map((d) => {
-          const s = bySlot.get(`${d}-${hr}`);
+          const list = bySlot.get(`${d}-${hr}`) || [];
+          const mineS = list.find((x) => x.userId === me.id);
+          const s = mineS || list[0];
+          const others = list.filter((x) => x.userId !== me.id).map((x) => x.name);
           const label = `${DAY_LONG[d]} ${pad(hr)}:00-${pad(hr + 1)}:00`;
           let cls = 'cell', text = 'libero', onclick = null, status = 'libero';
           if (!s) {
             cls += ' free';
             if (isAdmin) { onclick = () => assignDialog(d, hr, null); cls += ' act'; }
             else if (!pastDay(d) && (canEdit || (S.extraOnly && nearDay(d)))) { onclick = () => quickSlot('book', d, hr); cls += ' act'; }
-          } else if (s.userId === me.id) {
-            cls += ' mine'; text = 'Tu'; status = 'prenotato da te';
+          } else if (mineS) {
+            cls += ' mine'; text = others.length ? 'Tu + ' + others.join(' + ') : 'Tu'; status = others.length ? `prenotato da te insieme a ${others.join(', ')}` : 'prenotato da te';
             if (!pastDay(d) && (canEdit || (S.extraOnly && nearDay(d)))) { onclick = () => quickSlot('unbook', d, hr); cls += ' act'; }
           } else {
-            cls += ' taken'; text = s.name; status = `occupato da ${s.name}`;
-            if (isAdmin) { onclick = () => assignDialog(d, hr, s); cls += ' act'; }
+            cls += ' taken'; text = list.map((x) => x.name).join(' + '); status = `occupato da ${list.map((x) => x.name).join(', ')}`;
+            if (isAdmin) { onclick = () => assignDialog(d, hr, { ...s, name: text }); cls += ' act'; }
+            else if (S.overlapOpen && canEdit && !pastDay(d)) { onclick = () => quickSlot('book', d, hr); cls += ' act'; status += ', puoi sovrapporti'; }
           }
-          if (s && s.extra) { cls += ' extra'; text += ' · extra'; status += ', ore extra oltre il limite'; }
+          const isExtra = mineS ? mineS.extra : (list.length === 1 && list[0].extra);
+          if (isExtra) { cls += ' extra'; text += ' · extra'; status += ', ore extra oltre il limite'; }
           return h('td', null, h('button', { class: cls, type: 'button', 'aria-label': `${label}, ${status}`, title: text, onclick, 'aria-disabled': onclick ? null : 'true', tabindex: onclick ? null : '-1' }, text));
         })));
     }
@@ -804,6 +813,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
         !isAdmin ? h('span', null, h('i', { class: 'l-mine' }), 'prenotato da te') : null,
         !isCur ? h('span', null, 'Stai guardando una settimana esterna alle due settimane attualmente in prenotazione.') : null,
         S.extraOnly ? h('span', null, `Settimana in corso: puoi prenotare solo i turni liberi di oggi e di domani (quelli oltre le ${cfg.maxHours} ore complessive sono extra).`) : null,
+        !isAdmin && canEdit && S.overlapOpen ? h('span', null, 'Tutti i turni delle due settimane sono occupati: puoi sovrapporti a un turno già occupato (toccalo per prenotarlo insieme a chi c\'è già).') : null,
         !isAdmin && !canEdit && isCur ? h('span', null, 'Potrai modificare i turni solo durante il tuo turno in fila.') : null));
   }
 
