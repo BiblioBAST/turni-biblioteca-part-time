@@ -4,6 +4,9 @@
 <base target="_top">
 <meta charset="utf-8">
 <title>Turni in biblioteca</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1f2937">
 <style>
 @font-face {
   font-family: "Titillium Web";
@@ -331,6 +334,8 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
     switch (method + ' ' + path) {
       case 'POST /api/login': return ['app_login', { p_username: b.username, p_password: b.password }];
       case 'POST /api/logout': return ['app_logout', t];
+      case 'POST /api/push/subscribe': return ['app_push_subscribe', { ...t, p_sub: b.sub }];
+      case 'POST /api/push/unsubscribe': return ['app_push_unsubscribe', { ...t, p_endpoint: b.endpoint }];
       case 'GET /api/me': return ['app_me', t];
       case 'POST /api/change-password': return ['app_change_password', { ...t, p_current: b.current, p_next: b.next }];
       case 'GET /api/state': return ['app_state', { ...t, p_week: q.week || null }];
@@ -485,6 +490,7 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
   }
 
   async function logout() {
+    try { await Alerts.pushOff(); } catch { /* ignora */ }
     try { await api('POST', '/api/logout'); } catch { /* già uscito */ }
     showLogin();
   }
@@ -1013,6 +1019,35 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
         await reg.showNotification(title, { body, tag: 'turni', renotify: true, requireInteraction: true, vibrate: [300, 150, 300, 150, 300] });
       } catch { /* ignora */ }
     }
+    // ── Notifiche push (arrivano anche a telefono bloccato) ──
+    const VAPID_PUBLIC = 'BP2MzQk5r3ZXQBadRBOVpNAXx3daI89UGAwBNzuJ6fSWSVlMZhANTPQWAArtU-qCy1oBjIMVK_vJG_UBj8Vs-D8';
+    function b64ToBytes(s) {
+      const p = s + '='.repeat((4 - s.length % 4) % 4);
+      return Uint8Array.from(atob(p.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+    }
+    async function pushOn() {
+      try {
+        if (!(me && me.role === 'student') || VAPID_PUBLIC.startsWith('INCOLLA')) return;
+        if (!('PushManager' in window) || !('serviceWorker' in navigator) || Notification.permission !== 'granted') return;
+        await navigator.serviceWorker.register('sw.js');
+        const reg = await navigator.serviceWorker.ready;
+        let sub = await reg.pushManager.getSubscription();
+        if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(VAPID_PUBLIC) });
+        await api('POST', '/api/push/subscribe', { sub: sub.toJSON() });
+      } catch { /* ignora: restano gli avvisi locali */ }
+    }
+    async function pushOff() {
+      pushDone = false;
+      try {
+        if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+        const reg = await navigator.serviceWorker.getRegistration();
+        const sub = reg && await reg.pushManager.getSubscription();
+        if (!sub) return;
+        const ep = sub.endpoint;
+        await sub.unsubscribe();
+        await api('POST', '/api/push/unsubscribe', { endpoint: ep });
+      } catch { /* ignora */ }
+    }
     async function clearNotifications() {
       try {
         if (!('serviceWorker' in navigator)) return;
@@ -1029,8 +1064,10 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
         else if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
       }, { once: false, passive: true });
     }
+    let pushDone = false;
     function onState() {
       if (!isStudent()) return;
+      if (!pushDone) { pushDone = true; pushOn(); }
       const s = st(), pos = S.queue.me.pos;
       if (s === 'active' && lastStatus !== 'active' && S.cyclePhase === 'open') {
         if (!document.hidden) { beep(); buzz([400, 150, 400]); }
@@ -1064,11 +1101,11 @@ dialog.wide { max-width: min(760px, calc(100vw - 24px)); }
         try {
           if (!audioCtx && (window.AudioContext || window.webkitAudioContext)) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
           const r = await Notification.requestPermission();
-          if (r === 'granted') { toast('Avvisi attivati'); if (S) renderTurni(); }
+          if (r === 'granted') { await pushOn(); toast('Avvisi attivati'); if (S) renderTurni(); }
         } catch { /* ignora */ }
       } }, '🔔 Attiva gli avvisi sul telefono'));
     }
-    return { init, onState, control };
+    return { init, onState, control, pushOff };
   })();
 
   // ───────────── Avvio ─────────────
