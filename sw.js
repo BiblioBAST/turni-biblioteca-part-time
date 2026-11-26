@@ -3,7 +3,7 @@
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
-// NUOVO: arriva un messaggio dal server -> mostra la notifica
+// Arriva un messaggio dal server: mostra la notifica
 self.addEventListener('push', (e) => {
   let d = {};
   try { d = e.data.json(); } catch (err) { /* ignora */ }
